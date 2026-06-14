@@ -102,7 +102,7 @@ if task_type == "🧠 Carica e Gestisci Memoria":
             st.error(f"Dettaglio errore DB: {memory_summary['errore']}")
     else:
         st.success(f"✅ Memoria caricata correttamente.")
-        st.write("Clicca sulle categorie qui sotto per vedere i file associati ed eventualmente eliminarle.")
+        st.write("Clicca sulle categorie per espanderle, vedere i singoli file ed eliminarli se necessario.")
         
         for doc_type, data in memory_summary.items():
             if doc_type == "errore":
@@ -112,17 +112,30 @@ if task_type == "🧠 Carica e Gestisci Memoria":
             count = data.get("count", 0)
             files = data.get("files", [])
             
-            # ESPANDER: Nasconde i dettagli finché non si clicca
             with st.expander(f"**{display_name}** ({count} blocchi totali)"):
                 if files:
-                    st.markdown("📎 **File caricati:**")
+                    st.markdown("📎 **File / Fonti presenti:**")
                     for f in files:
-                        st.markdown(f"- 📄 `{f}`")
+                        col_f1, col_f2 = st.columns([4, 1])
+                        with col_f1:
+                            st.markdown(f"- 📄 `{f}`")
+                        with col_f2:
+                            # Pulsante per eliminare il singolo file
+                            if st.button("🗑️ Elimina", key=f"del_file_{doc_type}_{f}", help=f"Elimina {f}"):
+                                with st.spinner(f"Eliminazione di '{f}' in corso..."):
+                                    success, msg = rag.delete_specific_file(client_id, doc_type, f)
+                                    if success:
+                                        st.success(msg)
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error(msg)
                 else:
-                    st.markdown("📝 *Solo testo manuale incollato o dati di sistema.*")
+                    st.markdown("📝 *Nessun file specifico tracciato.*")
                 
                 st.markdown("---")
-                if st.button(f"🗑️ Elimina tutta la categoria '{display_name}'", key=f"del_{doc_type}", type="secondary"):
+                # Pulsante per eliminare l'intera categoria (nucleare)
+                if st.button(f"🗑️ ELIMINA TUTTA LA CATEGORIA '{display_name}'", key=f"del_cat_{doc_type}", type="secondary"):
                     with st.spinner(f"Eliminazione di {display_name} in corso..."):
                         success, msg = rag.delete_category(client_id, doc_type)
                         if success:
@@ -175,9 +188,8 @@ if task_type == "🧠 Carica e Gestisci Memoria":
         files_processed = 0
         debug_info = []
         clean_cid = rag._clean_id(client_id)
-        debug_info.append(f"🔑 ID Cliente per salvataggio: '{clean_cid}'")
+        debug_info.append(f"🔑 ID Cliente: '{clean_cid}'")
         
-        # 1. PROCESSIAMO OGNI FILE SINGOLARMENTE PER TRACCIARNE IL NOME
         if uploaded_files:
             for uploaded_file in uploaded_files:
                 try:
@@ -198,14 +210,12 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                     debug_info.append(f"📄 **{uploaded_file.name}**: {char_count} caratteri.")
                     
                     if char_count > 0:
-                        # SALVIAMO IL FILE SINGOLARMENTE CON IL SUO NOME COME SOURCE
                         res = rag.add_document(client_id, extracted, doc_type, source_file=uploaded_file.name)
                         debug_info.append(f"   ↳ {res}")
                         files_processed += 1
                 except Exception as e:
                     debug_info.append(f"❌ **{uploaded_file.name}**: Errore ({str(e)})")
         
-        # 2. PROCESSIAMO IL TESTO MANUALE SEPARATAMENTE
         if manual_text.strip():
             res = rag.add_document(client_id, manual_text.strip(), doc_type, source_file="testo_manuale")
             debug_info.append(f"📝 **Testo Manuale**: {res}")

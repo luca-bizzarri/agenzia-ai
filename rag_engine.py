@@ -97,10 +97,9 @@ def add_document(client_id: str, text: str, doc_type: str = "generico", source_f
     
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
-    # ORA SALVIAMO ANCHE IL NOME DEL FILE NEI METADATA
     metadatas = [{"client_id": client_id_clean, "type": doc_type, "source": source_file} for _ in chunks]
     vectorstore.add_texts(texts=chunks, metadatas=metadatas)
-    return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Fonte: {source_file})."
+    return f"✅ Salvati {len(chunks)} blocchi (Fonte: {source_file})."
 
 def get_memory_summary(client_id: str):
     client_id_clean = _clean_id(client_id)
@@ -125,14 +124,39 @@ def get_memory_summary(client_id: str):
             summary[doc_type]["count"] += 1
             if source not in ["manuale", "sconosciuto", "sistema"]:
                 summary[doc_type]["files"].add(source)
+            elif source == "manuale":
+                summary[doc_type]["files"].add("📝 Testo Manuale Incollato")
+            elif source == "sistema":
+                summary[doc_type]["files"].add("⚙️ Dati di Sistema")
         
-        # Convertiamo i set in liste per renderli leggibili a Streamlit
         for key in summary:
             summary[key]["files"] = sorted(list(summary[key]["files"]))
             
         return summary
     except Exception as e:
         return {"errore": str(e)}
+
+# ==========================================
+# NUOVA FUNZIONE: CANCELLA SINGOLO FILE
+# ==========================================
+def delete_specific_file(client_id: str, doc_type: str, source_file: str):
+    """Elimina tutti i blocchi associati a uno specifico file/source in una categoria."""
+    client_id_clean = _clean_id(client_id)
+    try:
+        client.delete(
+            collection_name=collection_knowledge,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean)),
+                    FieldCondition(key="metadata.type", match=MatchValue(value=doc_type)),
+                    FieldCondition(key="metadata.source", match=MatchValue(value=source_file))
+                ]
+            )
+        )
+        return True, f"✅ '{source_file}' eliminato con successo."
+    except Exception as e:
+        return False, f"❌ Errore: {str(e)}"
+# ==========================================
 
 def delete_category(client_id: str, doc_type: str):
     client_id_clean = _clean_id(client_id)
