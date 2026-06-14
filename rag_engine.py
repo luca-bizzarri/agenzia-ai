@@ -136,11 +136,7 @@ def get_memory_summary(client_id: str):
     except Exception as e:
         return {"errore": str(e)}
 
-# ==========================================
-# NUOVA FUNZIONE: CANCELLA SINGOLO FILE
-# ==========================================
 def delete_specific_file(client_id: str, doc_type: str, source_file: str):
-    """Elimina tutti i blocchi associati a uno specifico file/source in una categoria."""
     client_id_clean = _clean_id(client_id)
     try:
         client.delete(
@@ -156,7 +152,6 @@ def delete_specific_file(client_id: str, doc_type: str, source_file: str):
         return True, f"✅ '{source_file}' eliminato con successo."
     except Exception as e:
         return False, f"❌ Errore: {str(e)}"
-# ==========================================
 
 def delete_category(client_id: str, doc_type: str):
     client_id_clean = _clean_id(client_id)

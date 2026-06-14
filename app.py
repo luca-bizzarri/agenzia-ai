@@ -85,6 +85,7 @@ if task_type == "🧠 Carica e Gestisci Memoria":
         "note_call": "📞 Note da Call / Briefing",
         "regole_negative": "🚫 Regole Negative",
         "report_dati": "📊 Report / Dati Precedenti",
+        "link_riferimento": "🔗 Link Asset, Competitor e Fonti",
         "sistema": "⚙️ Sistema",
         "regola_stile": "🧠 Regole Apprese (Opzione B)",
         "errore": "❌ Errore DB"
@@ -120,7 +121,6 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                         with col_f1:
                             st.markdown(f"- 📄 `{f}`")
                         with col_f2:
-                            # Pulsante per eliminare il singolo file
                             if st.button("🗑️ Elimina", key=f"del_file_{doc_type}_{f}", help=f"Elimina {f}"):
                                 with st.spinner(f"Eliminazione di '{f}' in corso..."):
                                     success, msg = rag.delete_specific_file(client_id, doc_type, f)
@@ -134,7 +134,6 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                     st.markdown("📝 *Nessun file specifico tracciato.*")
                 
                 st.markdown("---")
-                # Pulsante per eliminare l'intera categoria (nucleare)
                 if st.button(f"🗑️ ELIMINA TUTTA LA CATEGORIA '{display_name}'", key=f"del_cat_{doc_type}", type="secondary"):
                     with st.spinner(f"Eliminazione di {display_name} in corso..."):
                         success, msg = rag.delete_category(client_id, doc_type)
@@ -149,8 +148,15 @@ if task_type == "🧠 Carica e Gestisci Memoria":
     st.markdown("### ➕ Aggiungi Nuovo Contenuto")
     col1, col2 = st.columns([2, 1])
     with col1:
-        uploaded_files = st.file_uploader("📎 Carica uno o più file (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"], accept_multiple_files=True)
-        manual_text = st.text_area("Oppure incolla qui del testo manuale:", height=150)
+        # AGGIUNTO SUPPORTO CSV PER LISTE DI LINK
+        uploaded_files = st.file_uploader("📎 Carica file (PDF, DOCX, TXT, CSV)", type=["pdf", "docx", "txt", "csv"], accept_multiple_files=True)
+        
+        # Placeholder dinamico in base alla categoria
+        placeholder_text = "Oppure incolla qui del testo manuale:"
+        if "link_riferimento" in locals() and doc_type == "link_riferimento":
+            placeholder_text = "Incolla qui la lista di link (uno per riga). Es:\nhttps://sitocliente.it\nhttps://competitor1.com\n..."
+            
+        manual_text = st.text_area(placeholder_text, height=150)
     
     with col2:
         st.markdown("**🏷️ Categoria:**")
@@ -163,6 +169,7 @@ if task_type == "🧠 Carica e Gestisci Memoria":
             "📞 Note da Call / Briefing",
             "🚫 Regole Negative",
             "📊 Report / Dati Precedenti",
+            "🔗 Link Asset, Competitor e Fonti",
             "➕ Scrivi una categoria personalizzata..."
         ]
         selected_cat = st.selectbox("Scegli", standard_categories, key="cat_select")
@@ -178,7 +185,8 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                 "📝 Istruzioni Specifiche di Creazione": "istruzioni_creazione",
                 "📞 Note da Call / Briefing": "note_call",
                 "🚫 Regole Negative": "regole_negative",
-                "📊 Report / Dati Precedenti": "report_dati"
+                "📊 Report / Dati Precedenti": "report_dati",
+                "🔗 Link Asset, Competitor e Fonti": "link_riferimento"
             }
             doc_type = mapping.get(selected_cat, "generico")
             
@@ -196,7 +204,8 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                     extracted = ""
                     uploaded_file.seek(0)
                     
-                    if uploaded_file.type == "text/plain":
+                    if uploaded_file.type in ["text/plain", "text/csv"]:
+                        # Tratta sia TXT che CSV come testo semplice (perfetto per liste di link)
                         extracted = uploaded_file.read().decode("utf-8")
                     elif uploaded_file.type == "application/pdf":
                         reader = PyPDF2.PdfReader(uploaded_file)
@@ -242,11 +251,11 @@ elif task_type == "📅 Piano Editoriale Completo":
 
     if st.button("🚀 Genera Bozza Piano Editoriale", type="primary"):
         with st.spinner("L'Agente Creativo sta lavorando..."):
-            context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce")
+            context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, link di riferimento, tono di voce")
             prompt_pe = (
                 f"Sei un Social Media Manager e Brand Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT (solo testo separato da virgole, no markdown).\n"
                 f"Colonne ESATTE: Data, Canale, Formato, Tema/Angolo, Hook, Copy, CTA, Brief Visivo.\n\n"
-                f"CONTESTO CLIENTE (Rispetta tassativamente ICP, Pain/Gain, Obiezioni e Istruzioni di Creazione se presenti):\n{context}\n\n"
+                f"CONTESTO CLIENTE (Rispetta tassativamente ICP, Pain/Gain, Obiezioni, Link di riferimento e Istruzioni di Creazione se presenti):\n{context}\n\n"
                 f"RICHIESTA: Mese: {mese}, Obiettivo: {obiettivo}, Tema: {tema}, Canali: {', '.join(canali)}\n"
                 f"Genera 6 idee. Se ci sono virgole nel Copy, racchiudilo tra virgolette doppie. Rispondi SOLO con il CSV, intestazione inclusa."
             )
@@ -285,6 +294,6 @@ elif task_type == "🔍 Analisi Competitor / Trend":
                     st.markdown("### 📊 Risultati")
                     st.markdown(search_results)
                     with st.spinner("Sintesi insight..."):
-                        context = rag.get_client_context(client_id, "obiettivi strategici, ICP, pain gain")
+                        context = rag.get_client_context(client_id, "obiettivi strategici, ICP, pain gain, link competitor")
                         prompt_sintesi = f"Sei un Brand Strategist. Ricerca:\n{search_results}\nCliente: '{client_id}'. Contesto: {context}\nSintetizza in 3 insight pratici per il prossimo piano editoriale, collegandoli ai Pain/Gain del cliente."
                         st.info(rag.llm.invoke(prompt_sintesi).content)
