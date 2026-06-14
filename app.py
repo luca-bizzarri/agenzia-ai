@@ -76,15 +76,20 @@ task_type = st.radio("🤖 Scegli l'Agente", ["📅 Piano Editoriale Completo", 
 st.markdown("---")
 
 # ==========================================
-# AGENTE 1: CARICA MEMORIA (CON CATEGORIE DINAMICHE E FILE)
+# AGENTE 1: CARICA MEMORIA (CON CARICAMENTO MULTIPLI FILE)
 # ==========================================
 if task_type == "🧠 Carica Memoria Cliente":
     st.markdown('<div class="sub-header">Alimenta la memoria del cliente con file, testo o istruzioni specifiche</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        uploaded_file = st.file_uploader("📎 Carica un file (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
-        manual_text = st.text_area("Oppure incolla qui il testo manualmente:", height=250)
+        # ACCETTiamo PIÙ FILE CONTEMPORANEAMENTE
+        uploaded_files = st.file_uploader(
+            "📎 Carica uno o più file (PDF, DOCX, TXT)", 
+            type=["pdf", "docx", "txt"], 
+            accept_multiple_files=True
+        )
+        manual_text = st.text_area("Oppure incolla qui del testo manuale da aggiungere:", height=200)
     
     with col2:
         st.markdown("**🏷️ Scegli o crea una categoria:**")
@@ -118,32 +123,42 @@ if task_type == "🧠 Carica Memoria Cliente":
             
         st.info(f"Salverai come: **`{doc_type}`**")
 
-    if st.button("💾 Salva nella Memoria", type="primary"):
+    if st.button("💾 Salva tutto nella Memoria", type="primary"):
         final_text = ""
-        if uploaded_file is not None:
-            try:
-                if uploaded_file.type == "text/plain":
-                    final_text = uploaded_file.read().decode("utf-8")
-                elif uploaded_file.type == "application/pdf":
-                    reader = PyPDF2.PdfReader(uploaded_file)
-                    final_text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
-                elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                    doc = docx.Document(uploaded_file)
-                    final_text = "\n".join([para.text for para in doc.paragraphs])
-            except Exception as e:
-                st.error(f"Errore nella lettura del file: {e}")
+        files_processed = 0
         
+        # 1. Leggiamo TUTTI i file caricati
+        if uploaded_files:
+            for uploaded_file in uploaded_files:
+                try:
+                    if uploaded_file.type == "text/plain":
+                        final_text += "\n\n--- INIZIO FILE: " + uploaded_file.name + " ---\n"
+                        final_text += uploaded_file.read().decode("utf-8")
+                    elif uploaded_file.type == "application/pdf":
+                        final_text += "\n\n--- INIZIO FILE: " + uploaded_file.name + " ---\n"
+                        reader = PyPDF2.PdfReader(uploaded_file)
+                        final_text += "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+                    elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                        final_text += "\n\n--- INIZIO FILE: " + uploaded_file.name + " ---\n"
+                        doc = docx.Document(uploaded_file)
+                        final_text += "\n".join([para.text for para in doc.paragraphs])
+                    files_processed += 1
+                except Exception as e:
+                    st.error(f"❌ Errore nella lettura del file '{uploaded_file.name}': {e}")
+        
+        # 2. Aggiungiamo il testo manuale se presente
         if manual_text.strip():
-            final_text += "\n\n" + manual_text.strip()
+            final_text += "\n\n--- TESTO MANUALE ---\n" + manual_text.strip()
             
         final_text = final_text.strip()
         
+        # 3. Salviamo tutto insieme
         if final_text:
-            with st.spinner("Elaborazione e salvataggio in corso..."):
+            with st.spinner(f"Elaborazione di {files_processed} file e salvataggio in corso..."):
                 result = rag.add_document(client_id, final_text, doc_type)
                 st.success(result)
         else:
-            st.warning("⚠️ Carica un file o incolla del testo prima di salvare.")
+            st.warning("⚠️ Carica almeno un file o incolla del testo prima di salvare.")
 
 # ==========================================
 # AGENTE 2: PIANO EDITORIALE
@@ -161,7 +176,6 @@ elif task_type == "📅 Piano Editoriale Completo":
 
     if st.button("🚀 Genera Bozza Piano Editoriale", type="primary"):
         with st.spinner("L'Agente Creativo sta lavorando..."):
-            # La query è ampia per pescare brand book, ICP, istruzioni e obiezioni
             context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce")
             
             prompt_pe = (
