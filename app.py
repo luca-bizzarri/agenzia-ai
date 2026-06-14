@@ -25,6 +25,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# ==========================================
+# SIDEBAR
+# ==========================================
 st.sidebar.title("🏢 Agenzia AI Hub")
 all_clients = rag.get_all_clients()
 client_options = ["➕ CREA NUOVO CLIENTE..."] + all_clients
@@ -41,7 +44,7 @@ if selected_option == "➕ CREA NUOVO CLIENTE...":
         elif new_client_id in all_clients:
             st.sidebar.warning(f"Il cliente '{new_client_id}' esiste già.")
         else:
-            with st.sidebar.spinner(f"Creazione in corso..."):
+            with st.sidebar.spinner("Creazione in corso..."):
                 if rag.register_client(new_client_id):
                     rag.add_document(new_client_id, f"Cliente {new_client_id} inizializzato.", doc_type="sistema", source_file="sistema")
                     st.sidebar.success(f"✅ Cliente '{new_client_id}' creato!")
@@ -62,7 +65,7 @@ if client_id:
                 with st.spinner("Eliminazione in corso..."):
                     success, message = rag.delete_client(client_id)
                     if success:
-                        st.success(f"✅ Eliminato.")
+                        st.success("✅ Eliminato.")
                         time.sleep(1)
                         st.rerun()
                     else:
@@ -86,7 +89,7 @@ task_type = st.radio("🤖 Scegli l'Agente", [
 st.markdown("---")
 
 # ==========================================
-# AGENTE 1: MEMORIA (CON SCRAPING BATCH)
+# AGENTE 1: MEMORIA
 # ==========================================
 if task_type == "🧠 Carica e Gestisci Memoria":
     st.markdown('<div class="sub-header">Alimenta o modifica la memoria strategica del cliente</div>', unsafe_allow_html=True)
@@ -123,7 +126,6 @@ if task_type == "🧠 Carica e Gestisci Memoria":
     st.markdown("---")
     st.markdown("### ➕ Aggiungi Nuovo Contenuto")
     
-    # --- SEZIONE A: CARICAMENTO FILE E TESTO ---
     with st.expander("📎 Carica File o Testo Manuale", expanded=False):
         col1, col2 = st.columns([2, 1])
         with col1:
@@ -164,31 +166,21 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                 st.markdown(f'<div class="debug-box">' + "\n".join(debug_info) + "</div>", unsafe_allow_html=True)
                 time.sleep(1.5); st.rerun()
     
-    # --- SEZIONE B: SCRAPING BATCH LINK (NUOVA!) ---
     with st.expander("🌐 Scansiona Link Web (Batch Multi-URL)", expanded=True):
-        st.info("💡 **Come funziona:** Incolla qui sotto tutti gli URL che vuoi far leggere all'AI (uno per riga). Il sistema visiterà ogni link, estrarrà il testo pulito e lo salverà nella memoria del cliente. Perfetto per blog, siti competitor, articoli di riferimento, portfolio, ecc.")
-        
-        urls_text = st.text_area(
-            "📋 Incolla gli URL (uno per riga)",
-            height=200,
-            placeholder="https://www.sitocliente.it/blog\nhttps://www.competitor1.it/about\nhttps://www.fonte-autorevole.com/articolo-strategia\n..."
-        )
-        
-        # Upload file con lista URL
+        st.info("💡 Incolla qui sotto tutti gli URL che vuoi far leggere all'AI (uno per riga). Il sistema visiterà ogni link, estrarrà il testo pulito e lo salverà nella memoria.")
+        urls_text = st.text_area("📋 Incolla gli URL (uno per riga)", height=200, placeholder="https://www.sitocliente.it/blog\nhttps://www.competitor1.it/about")
         urls_file = st.file_uploader("Oppure carica un file TXT/CSV con la lista URL", type=["txt", "csv"], key="urls_file")
         
         if urls_file is not None:
             try:
                 file_content = urls_file.read().decode("utf-8")
-                urls_text = file_content  # Sovrascrive il textarea con il contenuto del file
+                urls_text = file_content
                 st.success(f"✅ Caricati {len([u for u in file_content.split('\n') if u.strip()])} URL dal file")
             except Exception as e:
                 st.error(f"❌ Errore lettura file: {e}")
         
         if st.button("🚀 Scansiona e Salva Tutti i Link", type="primary", use_container_width=True):
-            # Estrai URL validi
             urls_list = [u.strip() for u in urls_text.split('\n') if u.strip() and u.strip().startswith('http')]
-            
             if not urls_list:
                 st.warning("⚠️ Nessun URL valido trovato. Assicurati che ogni riga inizi con http:// o https://")
             else:
@@ -200,23 +192,20 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                 for idx, url in enumerate(urls_list):
                     with status_container:
                         st.write(f"🔄 Scansione {idx + 1}/{len(urls_list)}: `{url}`")
-                    
                     success, msg = rag.scrape_and_save_url(client_id, url, doc_type="link_riferimento")
                     results_log.append(f"{'✅' if success else '❌'} {msg}")
                     progress_bar.progress((idx + 1) / len(urls_list))
-                    time.sleep(0.5)  # Piccola pausa per non sovraccaricare i server
+                    time.sleep(0.5)
                 
-                # Mostra risultati finali
                 st.markdown("### 📊 Risultato Scansione")
                 st.markdown(f'<div class="debug-box">' + "\n".join(results_log) + "</div>", unsafe_allow_html=True)
-                
                 success_count = sum(1 for r in results_log if r.startswith('✅'))
-                st.success(f"✅ Completato! {success_count}/{len(urls_list)} link scansionati con successo e salvati nella memoria.")
+                st.success(f"✅ Completato! {success_count}/{len(urls_list)} link scansionati con successo.")
                 time.sleep(2)
                 st.rerun()
 
 # ==========================================
-# AGENTE 2: PED (INVARITO)
+# AGENTE 2: PED
 # ==========================================
 elif task_type == "📅 Piano Editoriale Completo":
     st.markdown('<div class="sub-header">Generazione professionale: 3 contenuti alla volta, copy profondi e strutturati</div>', unsafe_allow_html=True)
@@ -241,28 +230,22 @@ elif task_type == "📅 Piano Editoriale Completo":
     if totale == 0:
         st.warning("⚠️ Configura almeno un contenuto per generare il piano.")
     else:
-        st.success(f"🎯 Piano configurato: {totale} contenuti totali (verranno generati in batch di 3 per garantire qualità)")
+        st.success(f"🎯 Piano configurato: {totale} contenuti totali (generati in batch di 3 per massima qualità)")
         if st.button(f"🚀 GENERA PRIMI 3 CONTENUTI", type="primary", use_container_width=True):
             with st.spinner("Recupero contesto e scrittura copy professionali..."):
                 context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce, link riferimento")
                 
-                with st.expander("🔍 Vedi cosa sta leggendo l'AI (Contesto Recuperato dai tuoi file)", expanded=False):
+                with st.expander("🔍 Vedi cosa sta leggendo l'AI", expanded=False):
                     st.markdown(f'<div class="context-box">{context}</div>', unsafe_allow_html=True)
                 
                 canali_list = list(canali_config.keys())[:3]
-                
                 prompt_pe = (
-                    f"Sei un Senior Copywriter e Content Strategist. Genera ESATTAMENTE 3 contenuti in formato JSON STRICT.\n\n"
-                    f"## CONTESTO CLIENTE (BASE ASSOLUTA):\n{context}\n\n"
+                    f"Sei un Senior Copywriter. Genera ESATTAMENTE 3 contenuti in formato JSON STRICT.\n\n"
+                    f"## CONTESTO CLIENTE:\n{context}\n\n"
                     f"## CONFIGURAZIONE:\nPeriodo: {mese} | Obiettivo: {obiettivo} | Tema Centrale: {tema} | Note: {istruzioni_extra}\n"
-                    f"Canali da usare in questo batch: {', '.join(canali_list)}\n\n"
-                    f"## FORMATO OUTPUT JSON:\n[{{\"tipo\": \"...\", \"data\": \"YYYY-MM-DD\", \"titolo\": \"...\", \"hook\": \"...\", \"copy\": \"...\", \"cta\": \"...\", \"brief_visivo\": \"...\", \"hashtag_seo\": \"...\", \"note\": \"...\"}}, ...]\n\n"
-                    f"## VINCOLI OBBLIGATORI:\n"
-                    f"1. **LUNGHEZZA COPY**: LinkedIn = 150-250 parole. Instagram = 80-150 parole. TikTok/Reel = Script di 150-300 caratteri.\n"
-                    f"2. **STRUTTURA COPY**: Intro (Hook) → 2-3 paragrafi di sviluppo → CTA chiara. Usa a capo reali.\n"
-                    f"3. **ALLINEAMENTO TEMA**: Ogni contenuto deve ruotare ESPlicitamente attorno a: '{tema}'.\n"
-                    f"4. **VIETATO**: Placeholder, 'Lorem ipsum', frasi generiche. Scrivi testi PRONTI ALLA PUBBLICAZIONE.\n"
-                    f"5. Rispondi SOLO con il JSON valido, senza markdown o testo extra."
+                    f"Canali: {', '.join(canali_list)}\n\n"
+                    f"## FORMATO JSON:\n[{{\"tipo\": \"...\", \"data\": \"YYYY-MM-DD\", \"titolo\": \"...\", \"hook\": \"...\", \"copy\": \"...\", \"cta\": \"...\", \"brief_visivo\": \"...\", \"hashtag_seo\": \"...\", \"note\": \"...\"}}]\n\n"
+                    f"## VINCOLI:\n1. LinkedIn: 150-250 parole. Instagram: 80-150 parole.\n2. Struttura: Hook → 2-3 paragrafi → CTA.\n3. ALLINEAMENTO TEMA: Ruota esplicitamente attorno a '{tema}'.\n4. VIETATO: Placeholder o frasi generiche. Scrivi testi PRONTI ALLA PUBBLICAZIONE.\n5. Rispondi SOLO con JSON valido."
                 )
                 response = rag.llm.invoke(prompt_pe).content
                 
@@ -292,7 +275,6 @@ elif task_type == "📅 Piano Editoriale Completo":
                     buf = io.BytesIO()
                     doc.save(buf); buf.seek(0)
                     st.download_button("📥 Scarica WORD", buf, f"PED_{client_id}_{mese.replace(' ','_')}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-                    
                 except Exception as e:
                     st.error("⚠️ Errore parsing JSON. Output grezzo:"); st.code(response)
 
@@ -304,7 +286,7 @@ elif task_type == "📅 Piano Editoriale Completo":
                 st.success(result)
 
 # ==========================================
-# AGENTE 3: REPORT ADS (INVARITO)
+# AGENTE 3: REPORT ADS
 # ==========================================
 elif task_type == "📊 Report ADS Performance":
     st.markdown('<div class="sub-header">Genera report PDF professionale con analisi performance ADS</div>', unsafe_allow_html=True)
@@ -345,15 +327,12 @@ elif task_type == "📊 Report ADS Performance":
                     
                     csv_sample = df_report.head(20).to_string()
                     prompt_analysis = (
-                        f"Sei un Senior Media Buyer. Analizza questo report ADS e genera un commento strategico in italiano.\n\n"
+                        f"Sei un Senior Media Buyer. Analizza questo report ADS.\n\n"
                         f"## DATI:\n{csv_sample}\n\n"
                         f"## CONTESTO:\nCliente: {client_id}\nObiettivo: {obiettivo_campagna}\nPeriodo: {date_range}\n"
-                        f"Metriche aggregate: Spesa={total_spend:.2f}, Impressioni={total_impr}, Click={total_click}, CTR={avg_ctr:.2f}%, CPA={avg_cpa:.2f}, ROAS={avg_roas:.2f}\n\n"
-                        f"## COMPITO:\nRispondi in 4 sezioni concise (max 150 parole ciascuna):\n"
-                        f"1. **Executive Summary**: Performance complessiva e raggiungimento obiettivo\n"
-                        f"2. **Cosa ha Funzionato**: Pattern vincenti (formati, copy, audience)\n"
-                        f"3. **Anomalie e Sprechi**: Dove si brucia budget\n"
-                        f"4. **Raccomandazioni**: 3 azioni concrete per il prossimo periodo"
+                        f"Metriche: Spesa={total_spend:.2f}, Impressioni={total_impr}, Click={total_click}, CTR={avg_ctr:.2f}%, CPA={avg_cpa:.2f}, ROAS={avg_roas:.2f}\n\n"
+                        f"## COMPITO:\nRispondi in 4 sezioni (max 150 parole ciascuna):\n"
+                        f"1. **Executive Summary**\n2. **Cosa ha Funzionato**\n3. **Anomalie e Sprechi**\n4. **Raccomandazioni**"
                     )
                     ai_analysis = rag.llm.invoke(prompt_analysis).content
                     
@@ -366,7 +345,6 @@ elif task_type == "📊 Report ADS Performance":
                     pdf.set_font("Arial", "", 16)
                     pdf.cell(0, 15, f"Cliente: {client_id}", ln=True, align="C")
                     pdf.cell(0, 10, f"Periodo: {date_range}", ln=True, align="C")
-                    pdf.cell(0, 10, f"Obiettivo: {obiettivo_campagna}", ln=True, align="C")
                     pdf.set_font("Arial", "I", 10)
                     pdf.cell(0, 40, "", ln=True)
                     pdf.cell(0, 10, f"Generato il: {time.strftime('%d/%m/%Y')}", ln=True, align="C")
@@ -384,40 +362,6 @@ elif task_type == "📊 Report ADS Performance":
                     for metric, value in metrics:
                         pdf.cell(95, 8, metric, border=1)
                         pdf.cell(95, 8, value, border=1, ln=True)
-                    
-                    pdf.ln(10)
-                    pdf.set_font("Arial", "B", 14)
-                    pdf.cell(0, 10, "Visualizzazione Dati", ln=True)
-                    
-                    if campaign_col and spend_col:
-                        fig, ax = plt.subplots(figsize=(8, 4))
-                        top_campaigns = df_report.groupby(campaign_col)[spend_col].sum().nlargest(5)
-                        top_campaigns.plot(kind='bar', ax=ax, color='#1E88E5')
-                        ax.set_title('Top 5 Campagne per Spesa', fontsize=12, fontweight='bold')
-                        ax.set_ylabel('Spesa (€)')
-                        plt.xticks(rotation=45, ha='right')
-                        plt.tight_layout()
-                        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
-                            plt.savefig(tmp.name, dpi=150, bbox_inches='tight')
-                            tmp_path = tmp.name
-                        plt.close()
-                        pdf.image(tmp_path, x=10, w=190)
-                        os.unlink(tmp_path)
-                    
-                    if len(df_report) > 1 and ctr_col and cpa_col:
-                        pdf.add_page()
-                        fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-                        df_report[ctr_col].hist(ax=axes[0], bins=20, color='#4CAF50', alpha=0.7)
-                        axes[0].set_title('Distribuzione CTR', fontweight='bold')
-                        df_report[cpa_col].hist(ax=axes[1], bins=20, color='#FF9800', alpha=0.7)
-                        axes[1].set_title('Distribuzione CPA', fontweight='bold')
-                        plt.tight_layout()
-                        with tempfile.NamedTemporaryFile(delete=False, suffix='.png') as tmp:
-                            plt.savefig(tmp.name, dpi=150, bbox_inches='tight')
-                            tmp_path = tmp.name
-                        plt.close()
-                        pdf.image(tmp_path, x=10, w=190)
-                        os.unlink(tmp_path)
                     
                     pdf.add_page()
                     pdf.set_font("Arial", "B", 18)
@@ -444,7 +388,7 @@ elif task_type == "📊 Report ADS Performance":
                     st.error(f"❌ Errore: {str(e)}")
 
 # ==========================================
-# AGENTE 4: REPORT SOCIAL (INVARITO)
+# AGENTE 4: REPORT SOCIAL
 # ==========================================
 elif task_type == "📱 Report Social Organico":
     st.markdown('<div class="sub-header">Genera report PDF con analisi performance organica social</div>', unsafe_allow_html=True)
@@ -486,4 +430,82 @@ elif task_type == "📱 Report Social Organico":
                     else: top_posts = df_social.head(5)
                     
                     social_sample = df_social.head(20).to_string()
-                    prompt_social
+                    prompt_social = (
+                        f"Sei un Social Media Manager esperto. Analizza questo report di contenuti organici.\n\n"
+                        f"## DATI:\n{social_sample}\n\n"
+                        f"## CONTESTO:\nCliente: {client_id}\nPeriodo: {date_range_social}\nPiattaforme: {', '.join(piattaforme)}\n"
+                        f"Metriche: Post={total_posts}, Like={total_likes}, Commenti={total_comments}, Condivisioni={total_shares}, Reach={total_reach}, Engagement Rate Medio={avg_engagement:.2f}%\n\n"
+                        f"## COMPITO:\nRispondi in 4 sezioni concise (max 150 parole ciascuna):\n"
+                        f"1. **Performance Generale**\n2. **Contenuti Vincenti**\n3. **Aree di Miglioramento**\n4. **Strategia Prossimo Periodo**"
+                    )
+                    ai_analysis_social = rag.llm.invoke(prompt_social).content
+                    
+                    pdf = FPDF()
+                    pdf.set_auto_page_break(auto=True, margin=15)
+                    pdf.add_page()
+                    pdf.set_font("Arial", "B", 24)
+                    pdf.cell(0, 60, "", ln=True)
+                    pdf.cell(0, 20, f"Report Performance Social Organico", ln=True, align="C")
+                    pdf.set_font("Arial", "", 16)
+                    pdf.cell(0, 15, f"Cliente: {client_id}", ln=True, align="C")
+                    pdf.cell(0, 10, f"Periodo: {date_range_social}", ln=True, align="C")
+                    pdf.set_font("Arial", "I", 10)
+                    pdf.cell(0, 40, "", ln=True)
+                    pdf.cell(0, 10, f"Generato il: {time.strftime('%d/%m/%Y')}", ln=True, align="C")
+                    
+                    pdf.add_page()
+                    pdf.set_font("Arial", "B", 18)
+                    pdf.cell(0, 15, "Metriche Chiave", ln=True)
+                    pdf.ln(5)
+                    pdf.set_font("Arial", "B", 12)
+                    pdf.set_fill_color(230, 230, 230)
+                    pdf.cell(95, 10, "Metrica", border=1, fill=True)
+                    pdf.cell(95, 10, "Valore", border=1, fill=True, ln=True)
+                    pdf.set_font("Arial", "", 11)
+                    metrics_social = [("Post Totali", f"{total_posts}"), ("Like Totali", f"{total_likes:,.0f}"), ("Commenti", f"{total_comments:,.0f}"), ("Condivisioni", f"{total_shares:,.0f}"), ("Reach Totale", f"{total_reach:,.0f}"), ("Engagement Rate Medio", f"{avg_engagement:.2f}%")]
+                    for metric, value in metrics_social:
+                        pdf.cell(95, 8, metric, border=1)
+                        pdf.cell(95, 8, value, border=1, ln=True)
+                    
+                    pdf.add_page()
+                    pdf.set_font("Arial", "B", 18)
+                    pdf.cell(0, 15, "Analisi Strategica AI", ln=True)
+                    pdf.ln(5)
+                    pdf.set_font("Arial", "", 10)
+                    for line in ai_analysis_social.split('\n'):
+                        clean_line = line.replace('**', '').replace('*', '')
+                        if clean_line.strip(): pdf.multi_cell(0, 6, clean_line)
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+                        pdf.output(tmp.name)
+                        tmp_path = tmp.name
+                    with open(tmp_path, 'rb') as pdf_file:
+                        pdf_bytes = pdf_file.read()
+                    
+                    st.success("✅ Report Social generato con successo!")
+                    st.markdown("### 📈 Anteprima Analisi")
+                    st.markdown(f'<div class="insight-box">{ai_analysis_social}</div>', unsafe_allow_html=True)
+                    st.download_button(label="📥 Scarica Report Social PDF", data=pdf_bytes, file_name=f"Report_Social_{client_id}_{date_range_social.replace(' ', '_')}.pdf", mime="application/pdf")
+                    os.unlink(tmp_path)
+                except Exception as e:
+                    st.error(f"❌ Errore: {str(e)}")
+
+# ==========================================
+# AGENTE 5: COMPETITOR
+# ==========================================
+elif task_type == "🔍 Analisi Competitor / Trend":
+    st.markdown('<div class="sub-header">Ricerca sul web trend o competitor</div>', unsafe_allow_html=True)
+    query_ricerca = st.text_input("🔍 Cosa cercare? (es. 'trend marketing B2B gennaio 2025')")
+    if st.button("🌐 Avvia Ricerca Web", type="primary"):
+        if query_ricerca:
+            with st.spinner("Ricerca in corso..."):
+                search_results = rag.web_search(query_ricerca, num_results=5)
+                if "Errore" in search_results or "⚠️" in search_results:
+                    st.warning(search_results)
+                else:
+                    st.markdown("### 📊 Risultati")
+                    st.markdown(search_results)
+                    with st.spinner("Sintesi insight..."):
+                        context = rag.get_client_context(client_id, "obiettivi strategici, ICP, pain gain, link competitor")
+                        prompt_sintesi = f"Sei un Brand Strategist. Ricerca:\n{search_results}\nCliente: '{client_id}'. Contesto: {context}\nSintetizza in 3 insight pratici."
+                        st.info(rag.llm.invoke(prompt_sintesi).content)
