@@ -12,6 +12,7 @@ st.markdown("""
     <style>
     .main-header {font-size: 2.2rem; font-weight: bold; color: #1E88E5; margin-bottom: 0.5rem;}
     .sub-header {font-size: 1.1rem; color: #555; margin-bottom: 1.5rem;}
+    .memory-item {background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -72,27 +73,64 @@ if not client_id:
 # MAIN AREA
 # ==========================================
 st.markdown(f'<div class="main-header">Dashboard: {client_id}</div>', unsafe_allow_html=True)
-task_type = st.radio("🤖 Scegli l'Agente", ["📅 Piano Editoriale Completo", "🔍 Analisi Competitor / Trend", "🧠 Carica Memoria Cliente"], horizontal=True)
+task_type = st.radio("🤖 Scegli l'Agente", ["🧠 Carica e Gestisci Memoria", "📅 Piano Editoriale Completo", "🔍 Analisi Competitor / Trend"], horizontal=True)
 st.markdown("---")
 
 # ==========================================
-# AGENTE 1: CARICA MEMORIA (CON CARICAMENTO MULTIPLI FILE)
+# AGENTE 1: CARICA E GESTISCI MEMORIA
 # ==========================================
-if task_type == "🧠 Carica Memoria Cliente":
-    st.markdown('<div class="sub-header">Alimenta la memoria del cliente con file, testo o istruzioni specifiche</div>', unsafe_allow_html=True)
+if task_type == "🧠 Carica e Gestisci Memoria":
+    st.markdown('<div class="sub-header">Alimenta o modifica la memoria strategica del cliente</div>', unsafe_allow_html=True)
     
+    # --- SEZIONE 1: VISUALIZZA E GESTISCI MEMORIA ESISTENTE ---
+    st.markdown("### 📂 Memoria Attuale")
+    memory_summary = rag.get_memory_summary(client_id)
+    
+    # Mappatura inversa per mostrare i nomi belli
+    reverse_mapping = {
+        "brand_book": "📘 Brand Book / Linee Guida",
+        "icp_personas": "👤 ICP / Personas & Pain/Gain",
+        "gestione_obiezioni": "🛡️ Gestione Obiezioni",
+        "esempi_copy": "✍️ Esempi di Copy Approvati",
+        "istruzioni_creazione": "📝 Istruzioni Specifiche di Creazione",
+        "note_call": "📞 Note da Call / Briefing",
+        "regole_negative": "🚫 Regole Negative",
+        "report_dati": "📊 Report / Dati Precedenti",
+        "sistema": "⚙️ Sistema",
+        "regola_stile": "🧠 Regole Apprese (Opzione B)"
+    }
+    
+    if not memory_summary:
+        st.info("La memoria di questo cliente è vuota. Carica il primo documento qui sotto!")
+    else:
+        st.write("Clicca su 🗑️ per eliminare una categoria specifica e ricaricarla aggiornata.")
+        for doc_type, count in memory_summary.items():
+            display_name = reverse_mapping.get(doc_type, f"📁 {doc_type}")
+            
+            col_chk1, col_chk2 = st.columns([3, 1])
+            with col_chk1:
+                st.markdown(f"<div class='memory-item'><b>{display_name}</b> <span style='color:#666'>({count} blocchi di testo)</span></div>", unsafe_allow_html=True)
+            with col_chk2:
+                if st.button(f"🗑️ Elimina", key=f"del_{doc_type}", type="secondary", use_container_width=True):
+                    with st.spinner(f"Eliminazione di {display_name} in corso..."):
+                        success, msg = rag.delete_category(client_id, doc_type)
+                        if success:
+                            st.success(msg)
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+        st.markdown("---")
+
+    # --- SEZIONE 2: CARICAMENTO NUOVI DATI ---
+    st.markdown("### ➕ Aggiungi Nuovo Contenuto")
     col1, col2 = st.columns([2, 1])
     with col1:
-        # ACCETTiamo PIÙ FILE CONTEMPORANEAMENTE
-        uploaded_files = st.file_uploader(
-            "📎 Carica uno o più file (PDF, DOCX, TXT)", 
-            type=["pdf", "docx", "txt"], 
-            accept_multiple_files=True
-        )
-        manual_text = st.text_area("Oppure incolla qui del testo manuale da aggiungere:", height=200)
+        uploaded_files = st.file_uploader("📎 Carica uno o più file (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"], accept_multiple_files=True)
+        manual_text = st.text_area("Oppure incolla qui del testo manuale:", height=200)
     
     with col2:
-        st.markdown("**🏷️ Scegli o crea una categoria:**")
+        st.markdown("**🏷️ Categoria:**")
         standard_categories = [
             "📘 Brand Book / Linee Guida",
             "👤 ICP / Personas & Pain/Gain",
@@ -104,61 +142,60 @@ if task_type == "🧠 Carica Memoria Cliente":
             "📊 Report / Dati Precedenti",
             "➕ Scrivi una categoria personalizzata..."
         ]
-        selected_cat = st.selectbox("Categoria", standard_categories)
+        selected_cat = st.selectbox("Scegli", standard_categories, key="cat_select")
         
         if "➕" in selected_cat:
-            doc_type = st.text_input("Nome della tua categoria (es. 'promo_natale', 'istruzioni_video')").strip().lower().replace(" ", "_")
+            doc_type = st.text_input("Nome categoria (es. 'promo_natale')", key="custom_cat").strip().lower().replace(" ", "_")
         else:
-            mapping = {
-                "📘 Brand Book / Linee Guida": "brand_book",
-                "👤 ICP / Personas & Pain/Gain": "icp_personas",
-                "🛡️ Gestione Obiezioni": "gestione_obiezioni",
-                "✍️ Esempi di Copy Approvati": "esempi_copy",
-                "📝 Istruzioni Specifiche di Creazione": "istruzioni_creazione",
-                "📞 Note da Call / Briefing": "note_call",
-                "🚫 Regole Negative": "regole_negative",
-                "📊 Report / Dati Precedenti": "report_dati"
-            }
+            mapping = {v: k for k, v in reverse_mapping.items() if k != "sistema" and k != "regola_stile"}
+            # Fallback per sicurezza
+            mapping["📘 Brand Book / Linee Guida"] = "brand_book"
+            mapping["👤 ICP / Personas & Pain/Gain"] = "icp_personas"
+            mapping["🛡️ Gestione Obiezioni"] = "gestione_obiezioni"
+            mapping["✍️ Esempi di Copy Approvati"] = "esempi_copy"
+            mapping["📝 Istruzioni Specifiche di Creazione"] = "istruzioni_creazione"
+            mapping["📞 Note da Call / Briefing"] = "note_call"
+            mapping["🚫 Regole Negative"] = "regole_negative"
+            mapping["📊 Report / Dati Precedenti"] = "report_dati"
+            
             doc_type = mapping.get(selected_cat, "generico")
             
         st.info(f"Salverai come: **`{doc_type}`**")
 
-    if st.button("💾 Salva tutto nella Memoria", type="primary"):
+    if st.button("💾 Salva nella Memoria", type="primary"):
         final_text = ""
         files_processed = 0
         
-        # 1. Leggiamo TUTTI i file caricati
         if uploaded_files:
             for uploaded_file in uploaded_files:
                 try:
                     if uploaded_file.type == "text/plain":
-                        final_text += "\n\n--- INIZIO FILE: " + uploaded_file.name + " ---\n"
-                        final_text += uploaded_file.read().decode("utf-8")
+                        final_text += f"\n\n--- FILE: {uploaded_file.name} ---\n" + uploaded_file.read().decode("utf-8")
                     elif uploaded_file.type == "application/pdf":
-                        final_text += "\n\n--- INIZIO FILE: " + uploaded_file.name + " ---\n"
+                        final_text += f"\n\n--- FILE: {uploaded_file.name} ---\n"
                         reader = PyPDF2.PdfReader(uploaded_file)
                         final_text += "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
                     elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                        final_text += "\n\n--- INIZIO FILE: " + uploaded_file.name + " ---\n"
+                        final_text += f"\n\n--- FILE: {uploaded_file.name} ---\n"
                         doc = docx.Document(uploaded_file)
                         final_text += "\n".join([para.text for para in doc.paragraphs])
                     files_processed += 1
                 except Exception as e:
-                    st.error(f"❌ Errore nella lettura del file '{uploaded_file.name}': {e}")
+                    st.error(f"❌ Errore lettura '{uploaded_file.name}': {e}")
         
-        # 2. Aggiungiamo il testo manuale se presente
         if manual_text.strip():
             final_text += "\n\n--- TESTO MANUALE ---\n" + manual_text.strip()
             
         final_text = final_text.strip()
         
-        # 3. Salviamo tutto insieme
         if final_text:
-            with st.spinner(f"Elaborazione di {files_processed} file e salvataggio in corso..."):
+            with st.spinner(f"Elaborazione di {files_processed} file in corso..."):
                 result = rag.add_document(client_id, final_text, doc_type)
                 st.success(result)
+                time.sleep(1)
+                st.rerun() # Ricarica per mostrare subito la nuova memoria
         else:
-            st.warning("⚠️ Carica almeno un file o incolla del testo prima di salvare.")
+            st.warning("⚠️ Carica almeno un file o incolla del testo.")
 
 # ==========================================
 # AGENTE 2: PIANO EDITORIALE

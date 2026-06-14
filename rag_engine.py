@@ -92,7 +92,47 @@ def add_document(client_id: str, text: str, doc_type: str = "generico"):
     vectorstore.add_texts(texts=chunks, metadatas=metadatas)
     return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Categoria: {doc_type})."
 
-def get_client_context(client_id: str, query: str, k: int = 8): # Aumentato a 8 per catturare più contesto (ICP, istruzioni, ecc.)
+# ==========================================
+# NUOVE FUNZIONI PER GESTIONE MEMORIA
+# ==========================================
+def get_memory_summary(client_id: str):
+    """Restituisce un dizionario con il numero di blocchi per ogni categoria del cliente."""
+    client_id_clean = _clean_id(client_id)
+    try:
+        records, _ = client.scroll(
+            collection_name=collection_knowledge,
+            limit=2000,
+            with_payload=True,
+            with_vectors=False,
+            scroll_filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
+        )
+        summary = {}
+        for record in records:
+            doc_type = record.payload.get("type", "generico")
+            summary[doc_type] = summary.get(doc_type, 0) + 1
+        return summary
+    except Exception:
+        return {}
+
+def delete_category(client_id: str, doc_type: str):
+    """Elimina tutti i blocchi di una specifica categoria per un cliente."""
+    client_id_clean = _clean_id(client_id)
+    try:
+        client.delete(
+            collection_name=collection_knowledge,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(key="client_id", match=MatchValue(value=client_id_clean)),
+                    FieldCondition(key="type", match=MatchValue(value=doc_type))
+                ]
+            )
+        )
+        return True, f"✅ Categoria '{doc_type}' eliminata con successo."
+    except Exception as e:
+        return False, f"❌ Errore: {str(e)}"
+# ==========================================
+
+def get_client_context(client_id: str, query: str, k: int = 8):
     client_id_clean = _clean_id(client_id)
     docs = vectorstore.similarity_search(query, k=k, filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))]))
     if not docs:
