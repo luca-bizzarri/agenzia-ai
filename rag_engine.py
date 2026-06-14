@@ -23,7 +23,7 @@ SERPER_API_KEY = get_key("SERPER_API_KEY")
 # 1. Connessione a Qdrant Cloud
 client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
-# 2. Embeddings VIA API (ZERO consumo di RAM locale, ottimo per l'italiano)
+# 2. Embeddings VIA API (ZERO consumo di RAM locale)
 embeddings = OpenAIEmbeddings(
     model="nomic-ai/nomic-embed-text-v1.5",
     openai_api_key=API_KEY,
@@ -53,11 +53,13 @@ try:
 except Exception:
     pass
 
-# CORREZIONE QUI: 'embeddings' al plurale
+# ==========================================
+# CORREZIONE CRUCIALE: 'embeddings' AL PLURALE
+# ==========================================
 vectorstore = Qdrant(
     client=client,
     collection_name=collection_knowledge,
-    embeddings=embeddings, 
+    embeddings=embeddings,  # <-- CONTROLLA CHE CI SIA LA 's' FINALE QUI
 )
 
 # 4. Modello LLM
@@ -72,11 +74,9 @@ llm = ChatOpenAI(
 # GESTIONE REGISTRO CLIENTI
 # ==========================================
 def _clean_id(client_id: str) -> str:
-    """Pulisce l'ID mantenendo MAIUSCOLE/minuscole, rimuovendo spazi."""
     return str(client_id).strip().replace(" ", "_")
 
 def get_all_clients():
-    """Recupera la lista di TUTTI i clienti dal registro dedicato."""
     try:
         records, _ = client.scroll(
             collection_name=collection_registry,
@@ -94,7 +94,6 @@ def get_all_clients():
         return []
 
 def register_client(client_id: str):
-    """Registra un nuovo cliente nel registro dedicato."""
     client_id_clean = _clean_id(client_id)
     point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, client_id_clean))
     
@@ -112,7 +111,6 @@ def register_client(client_id: str):
         return False
 
 def unregister_client(client_id: str):
-    """Rimuove un cliente dal registro usando il filtro."""
     client_id_clean = _clean_id(client_id)
     try:
         client.delete(
@@ -128,7 +126,6 @@ def unregister_client(client_id: str):
 # GESTIONE CONTENUTI
 # ==========================================
 def add_document(client_id: str, text: str, doc_type: str = "generico"):
-    """Salva un documento nella knowledge base."""
     client_id_clean = _clean_id(client_id)
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
@@ -137,7 +134,6 @@ def add_document(client_id: str, text: str, doc_type: str = "generico"):
     return f"✅ Salvati {len(chunks)} blocchi di memoria per '{client_id_clean}'."
 
 def get_client_context(client_id: str, query: str, k: int = 5):
-    """Recupera il contesto del cliente."""
     client_id_clean = _clean_id(client_id)
     docs = vectorstore.similarity_search(
         query, 
@@ -149,7 +145,6 @@ def get_client_context(client_id: str, query: str, k: int = 5):
     return "\n\n---\n\n".join([doc.page_content for doc in docs])
 
 def web_search(query: str, num_results: int = 3):
-    """Cerca sul web usando Serper.dev"""
     if not SERPER_API_KEY:
         return "⚠️ Chiave SERPER_API_KEY non trovata."
     
@@ -167,7 +162,6 @@ def web_search(query: str, num_results: int = 3):
         return f"Errore di connessione: {str(e)}"
 
 def save_and_teach(client_id: str, original_text: str, modified_text: str):
-    """Estrae regole stilistiche dalle correzioni umane."""
     prompt = PromptTemplate.from_template(
         "Sei un Brand Strategist esperto. Il sistema AI ha generato questo testo/struttura:\n'{original}'\n"
         "L'editor umano lo ha corretto/modificato in questo modo:\n'{modified}'\n"
@@ -180,7 +174,6 @@ def save_and_teach(client_id: str, original_text: str, modified_text: str):
     return f"🧠 Regola appresa e salvata per '{client_id}':\n\n{rule_extracted}"
 
 def delete_client(client_id: str):
-    """ELIMINA COMPLETAMENTE un cliente: registro + knowledge base."""
     client_id_clean = _clean_id(client_id)
     try:
         client.delete(
@@ -192,3 +185,4 @@ def delete_client(client_id: str):
     except Exception as e:
         print(f"Errore eliminazione completa: {e}")
         return False
+
