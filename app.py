@@ -6,7 +6,7 @@ import rag_engine as rag
 
 st.set_page_config(page_title="Agenzia AI Hub", layout="wide", page_icon="🚀")
 
-# --- STILE CSS PERSONALIZZATO ---
+# --- STILE CSS ---
 st.markdown("""
     <style>
     .main-header {font-size: 2.2rem; font-weight: bold; color: #1E88E5; margin-bottom: 0.5rem;}
@@ -19,16 +19,16 @@ st.markdown("""
 # ==========================================
 st.sidebar.title("🏢 Agenzia AI Hub")
 
-# 1. Recupera lista clienti dal database (ora con la funzione blindata)
+# 1. Recupera lista clienti dal REGISTRO DEDICATO (infallibile)
 all_clients = rag.get_all_clients()
 
-# 2. Menu a tendina per scegliere o creare
+# 2. Menu a tendina
 client_options = ["➕ CREA NUOVO CLIENTE..."] + all_clients
 selected_option = st.sidebar.selectbox("👤 Seleziona Cliente", client_options, key="client_selector")
 
 client_id = ""
 
-# 3. Logica di creazione nuovo cliente
+# 3. Logica creazione nuovo cliente
 if selected_option == "➕ CREA NUOVO CLIENTE...":
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🆕 Nuovo Cliente")
@@ -43,18 +43,26 @@ if selected_option == "➕ CREA NUOVO CLIENTE...":
         if not new_client_id:
             st.sidebar.error("⚠️ Inserisci un ID per il cliente")
         elif new_client_id in all_clients:
-            st.sidebar.warning(f"Il cliente '{new_client_id}' esiste già. Selezionalo dal menu.")
+            st.sidebar.warning(f"Il cliente '{new_client_id}' esiste già.")
         else:
             with st.sidebar.spinner(f"Creazione cliente '{new_client_id}' in corso..."):
-                # Salviamo un documento "sistema" per registrare il cliente
-                rag.add_document(new_client_id, f"Cliente {new_client_id} inizializzato nel sistema.", doc_type="sistema")
+                # REGISTRA nel registro dedicato (garantisce che appaia nella tendina)
+                success_registry = rag.register_client(new_client_id)
                 
-                st.sidebar.success(f"✅ Cliente '{new_client_id}' creato con successo!")
-                st.sidebar.info("Aggiornamento della lista in corso...")
+                # Aggiungi anche un documento iniziale nella knowledge base
+                rag.add_document(
+                    new_client_id, 
+                    f"Cliente {new_client_id} inizializzato nel sistema.", 
+                    doc_type="sistema"
+                )
                 
-                # Piccola pausa per assicurare che Qdrant abbia indicizzato il dato
-                time.sleep(1.5)
-                st.rerun()
+                if success_registry:
+                    st.sidebar.success(f"✅ Cliente '{new_client_id}' creato!")
+                    st.sidebar.info("Aggiornamento menu...")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.sidebar.error("❌ Errore nella creazione del cliente.")
 
 else:
     # Cliente esistente selezionato
@@ -62,7 +70,7 @@ else:
     st.sidebar.markdown("---")
     st.sidebar.success(f"🟢 Cliente attivo: **{client_id}**")
 
-# 4. Zona eliminazione sicura (visibile solo se un cliente è selezionato)
+# 4. Zona eliminazione sicura
 if client_id:
     st.sidebar.markdown("---")
     with st.sidebar.expander("⚠️ Elimina Cliente"):
@@ -78,12 +86,12 @@ if client_id:
                     success = rag.delete_client(client_id)
                     if success:
                         st.success(f"✅ Cliente '{client_id}' eliminato definitivamente.")
-                        time.sleep(1.5)
+                        time.sleep(1)
                         st.rerun()
                     else:
                         st.error("❌ Errore durante l'eliminazione.")
             else:
-                st.error("❌ Testo di conferma errato. Eliminazione bloccata per sicurezza.")
+                st.error("❌ Testo di conferma errato. Eliminazione bloccata.")
 
 # 5. Blocco se nessun cliente è selezionato
 if not client_id:
@@ -105,7 +113,7 @@ task_type = st.radio("🤖 Scegli l'Agente", [
 st.markdown("---")
 
 # ==========================================
-# AGENTE 1: CARICA DOCUMENTI / LINK
+# AGENTE 1: CARICA DOCUMENTI
 # ==========================================
 if task_type == "🧠 Carica Documenti/Link Cliente":
     st.markdown('<div class="sub-header">Alimenta la memoria e le regole stilistiche del cliente</div>', unsafe_allow_html=True)
@@ -126,7 +134,7 @@ if task_type == "🧠 Carica Documenti/Link Cliente":
             st.warning("Inserisci del testo prima di salvare.")
 
 # ==========================================
-# AGENTE 2: PIANO EDITORIALE COMPLETO
+# AGENTE 2: PIANO EDITORIALE
 # ==========================================
 elif task_type == "📅 Piano Editoriale Completo":
     st.markdown('<div class="sub-header">Genera un piano editoriale completo rispettando il tono di voce del cliente</div>', unsafe_allow_html=True)
@@ -142,7 +150,7 @@ elif task_type == "📅 Piano Editoriale Completo":
     istruzioni_extra = st.text_area("📝 Istruzioni specifiche (Opzionale)", placeholder="Es. Il cliente odia la parola 'sinergia', usa un tono più diretto.")
 
     if st.button("🚀 Genera Bozza Piano Editoriale", type="primary"):
-        with st.spinner("L'Agente Creativo sta lavorando... (Recupero contesto + Generazione)"):
+        with st.spinner("L'Agente Creativo sta lavorando..."):
             context = rag.get_client_context(client_id, f"regole stilistiche, tono di voce, brand book, informazioni su {tema}")
             
             prompt_pe = f"""Sei un Social Media Manager e Brand Strategist esperto. Genera un Piano Editoriale completo in formato CSV STRICT (senza codice markdown, senza spiegazioni, solo testo separato da virgole).
@@ -178,7 +186,6 @@ Rispondi SOLO con il CSV, includendo l'intestazione delle colonne come prima rig
                 st.code(response)
                 st.session_state['original_pe'] = response
 
-    # Sezione Salva e Insegna
     if 'current_pe_df' in st.session_state:
         st.markdown("---")
         st.markdown("### 🧠 Revisione e Apprendimento (Opzione B)")

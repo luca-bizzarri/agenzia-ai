@@ -5,15 +5,15 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams, Filter, FieldCondition, MatchValue
+from qdrant_client.http.models import Distance, VectorParams, Filter, FieldCondition, MatchValue, PointStruct
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+import uuid
 
 # --- FUNZIONE MAGICA PER LE CHIAVI ---
 def get_key(key_name):
     return os.getenv(key_name) or st.secrets.get(key_name, "")
 
-# Recupero sicuro di tutte le chiavi
 API_KEY = get_key("OPENAI_API_KEY")
 API_BASE = get_key("OPENAI_API_BASE") or "https://openrouter.ai/api/v1"
 MODEL_NAME = get_key("MODEL_NAME") or "qwen/qwen-2.5-72b-instruct"
@@ -27,17 +27,33 @@ client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 # 2. Embeddings gratuiti e locali
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
-# 3. Inizializza o recupera la collezione
-collection_name = "agenzia_knowledge"
+# 3. DUE COLLEZIONI: una per i contenuti, una per il registro clienti
+collection_knowledge = "agenzia_knowledge"
+collection_registry = "client_registry"
+
+# Crea collezione conoscenza (con embeddings)
 try:
     client.create_collection(
-        collection_name=collection_name,
+        collection_name=collection_knowledge,
         vectors_config=VectorParams(size=384, distance=Distance.COSINE),
     )
 except Exception:
     pass
 
-vectorstore = Qdrant(client=client, collection_name=collection_name, embeddings=embeddings)
+# Crea collezione registro (SENZA embeddings, solo metadati - velocissima)
+try:
+    client.create_collection(
+        collection_name=collection_registry,
+        vectors_config=VectorParams(size=4, distance=Distance.COSINE),  # vettore dummy minimo
+    )
+except Exception:
+    pass
+
+vectorstore = Qdrant(
+    client=client,
+    collection_name=collection_knowledge,
+    embeddings=embeddings,
+)
 
 # 4. Modello LLM
 llm = ChatOpenAI(
@@ -47,34 +63,81 @@ llm = ChatOpenAI(
     temperature=0.2
 )
 
+# ==========================================
+# GESTIONE REGISTRO CLIENTI (NUOVO E INFALLIBILE)
+# ==========================================
 def get_all_clients():
-    """Recupera la lista di tutti i clienti unici presenti nel database."""
+    """Recupera la lista di TUTTI i clienti dal registro dedicato."""
     try:
         records, _ = client.scroll(
-            collection_name=collection_name,
-            limit=1000, # Limite sicuro per un'agenzia
+            collection_name=collection_registry,
+            limit=1000,
             with_payload=True,
             with_vectors=False
         )
-        unique_clients = list(set([record.payload.get("client_id") for record in records if record.payload.get("client_id")]))
-        return sorted(unique_clients)
-    except Exception:
+        clients = []
+        for record in records:
+            if record.payload and record.payload.get("client_id"):
+                clients.append(record.payload.get("client_id"))
+        return sorted(clients)
+    except Exception as e:
+        print(f"Errore recupero clienti: {e}")
         return []
 
+def register_client(client_id: str):
+    """Registra un nuovo cliente nel registro dedicato. Garantisce che appaia nella tendina."""
+    client_id_clean = str(client_id).strip().lower()
+    
+    # Crea un punto con un vettore dummy (non serve semantic search qui)
+    dummy_vector = [0.1, 0.1, 0.1, 0.1]
+    point = PointStruct(
+        id=str(uuid.uuid5(uuid.NAMESPACE_DNS, client_id_clean)),  # ID deterministico
+        vector=dummy_vector,
+        payload={"client_id": client_id_clean}
+    )
+    
+    try:
+        client.upsert(
+            collection_name=collection_registry,
+            points=[point]
+        )
+        return True
+    except Exception as e:
+        print(f"Errore registrazione cliente: {e}")
+        return False
+
+def unregister_client(client_id: str):
+    """Rimuove un cliente dal registro."""
+    try:
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(client_id).strip().lower()))
+        client.delete(
+            collection_name=collection_registry,
+            points_selector=[point_id]
+        )
+        return True
+    except Exception as e:
+        print(f"Errore rimozione dal registro: {e}")
+        return False
+
+# ==========================================
+# GESTIONE CONTENUTI (QUELLO DI PRIMA)
+# ==========================================
 def add_document(client_id: str, text: str, doc_type: str = "generico"):
-    """Spezzetta e salva un testo nel database del cliente."""
+    """Salva un documento nel database della conoscenza."""
+    client_id_clean = str(client_id).strip().lower()
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
-    metadatas = [{"client_id": client_id, "type": doc_type} for _ in chunks]
+    metadatas = [{"client_id": client_id_clean, "type": doc_type} for _ in chunks]
     vectorstore.add_texts(texts=chunks, metadatas=metadatas)
-    return f"✅ Salvati {len(chunks)} blocchi di memoria per '{client_id}'."
+    return f"✅ Salvati {len(chunks)} blocchi di memoria per '{client_id_clean}'."
 
 def get_client_context(client_id: str, query: str, k: int = 5):
-    """Recupera le informazioni e le regole stilistiche più rilevanti per un cliente."""
+    """Recupera il contesto del cliente dalla knowledge base."""
+    client_id_clean = str(client_id).strip().lower()
     docs = vectorstore.similarity_search(
         query, 
         k=k, 
-        filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id))])
+        filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
     )
     if not docs:
         return "Nessuna informazione specifica trovata per questo cliente nel database."
@@ -94,12 +157,12 @@ def web_search(query: str, num_results: int = 3):
         if response.status_code == 200:
             results = response.json().get("organic", [])
             return "\n".join([f"- {r.get('title')}: {r.get('snippet')}" for r in results])
-        return f"Errore nella ricerca Serper: {response.status_code}"
+        return f"Errore Serper: {response.status_code}"
     except Exception as e:
         return f"Errore di connessione: {str(e)}"
 
 def save_and_teach(client_id: str, original_text: str, modified_text: str):
-    """Analizza la correzione umana, estrae la regola stilistica e la salva."""
+    """Estrae regole stilistiche dalle correzioni umane."""
     prompt = PromptTemplate.from_template(
         "Sei un Brand Strategist esperto. Il sistema AI ha generato questo testo/struttura:\n'{original}'\n"
         "L'editor umano lo ha corretto/modificato in questo modo:\n'{modified}'\n"
@@ -112,14 +175,19 @@ def save_and_teach(client_id: str, original_text: str, modified_text: str):
     return f"🧠 Regola appresa e salvata per '{client_id}':\n\n{rule_extracted}"
 
 def delete_client(client_id: str):
-    """ELIMINA COMPLETAMENTE tutti i dati di un cliente specifico. AZIONE IRREVERSIBILE."""
+    """ELIMINA COMPLETAMENTE un cliente: dal registro E dalla knowledge base."""
+    client_id_clean = str(client_id).strip().lower()
     try:
+        # 1. Elimina dalla knowledge base
         client.delete(
-            collection_name=collection_name,
+            collection_name=collection_knowledge,
             points_selector=Filter(
-                must=[FieldCondition(key="client_id", match=MatchValue(value=client_id))]
+                must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))]
             )
         )
+        # 2. Elimina dal registro
+        unregister_client(client_id_clean)
         return True
     except Exception as e:
+        print(f"Errore eliminazione completa: {e}")
         return False
