@@ -4,7 +4,6 @@ import io
 import time
 import rag_engine as rag
 
-# Ottimizzazione memoria: disabilita il warning di uso memoria di Streamlit se possibile
 st.set_page_config(page_title="Agenzia AI Hub", layout="wide", page_icon="🚀")
 
 st.markdown("""

@@ -24,12 +24,10 @@ SERPER_API_KEY = get_key("SERPER_API_KEY")
 client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
 # 2. Embeddings VIA API (ZERO consumo di RAM locale, ottimo per l'italiano)
-# Usiamo nomic-embed-text-v1.5 che è economico e performante su OpenRouter
 embeddings = OpenAIEmbeddings(
     model="nomic-ai/nomic-embed-text-v1.5",
     openai_api_key=API_KEY,
     openai_api_base=API_BASE,
-    # Dimensione vettore per questo modello specifico
     dimensions=768 
 )
 
@@ -41,7 +39,7 @@ collection_registry = "client_registry"
 try:
     client.create_collection(
         collection_name=collection_knowledge,
-        vectors_config=VectorParams(size=768, distance=Distance.COSINE), # Aggiornato a 768 per nomic
+        vectors_config=VectorParams(size=768, distance=Distance.COSINE),
     )
 except Exception:
     pass
@@ -55,10 +53,11 @@ try:
 except Exception:
     pass
 
+# CORREZIONE QUI: 'embeddings' al plurale
 vectorstore = Qdrant(
     client=client,
     collection_name=collection_knowledge,
-    embedding=embeddings, # Nota: 'embedding' singolare per OpenAIEmbeddings in LangChain
+    embeddings=embeddings, 
 )
 
 # 4. Modello LLM
@@ -100,7 +99,7 @@ def register_client(client_id: str):
     point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, client_id_clean))
     
     point = PointStruct(
-        id=id,
+        id=point_id,
         vector=[0.1, 0.1, 0.1, 0.1],
         payload={"client_id": client_id_clean}
     )
