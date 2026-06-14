@@ -98,16 +98,32 @@ if task_type == "🧠 Carica e Gestisci Memoria":
         "report_dati": "📊 Report / Dati Precedenti",
         "sistema": "⚙️ Sistema",
         "regola_stile": "🧠 Regole Apprese (Opzione B)",
-        "errore": "⚠️ Errore di Lettura DB"
+        "avviso": "⚠️ Avviso DB",
+        "errore": "❌ Errore DB"
     }
     
-    if not memory_summary or (len(memory_summary) == 1 and "errore" in memory_summary):
+    # Gestione visualizzazione riepilogo
+    has_data = False
+    for key in memory_summary:
+        if key not in ["avviso", "errore", "_totale_punti_db"]:
+            has_data = True
+            break
+
+    if not has_data:
         st.info("La memoria di questo cliente è vuota. Carica il primo documento qui sotto!")
+        if "avviso" in memory_summary:
+            st.warning(memory_summary["avviso"])
         if "errore" in memory_summary:
             st.error(f"Dettaglio errore DB: {memory_summary['errore']}")
     else:
+        total_db_points = memory_summary.get("_totale_punti_db", 0)
+        st.success(f"✅ Database sincronizzato: {total_db_points} blocchi totali trovati per questo cliente.")
+        
         st.write("Clicca su 🗑️ per eliminare una categoria specifica e ricaricarla aggiornata.")
         for doc_type, count in memory_summary.items():
+            if doc_type in ["avviso", "errore", "_totale_punti_db"]:
+                continue
+                
             display_name = reverse_mapping.get(doc_type, f"📁 {doc_type}")
             col_chk1, col_chk2 = st.columns([3, 1])
             with col_chk1:
@@ -118,13 +134,13 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                         success, msg = rag.delete_category(client_id, doc_type)
                         if success:
                             st.success(msg)
-                            time.sleep(1)
+                            time.sleep(1.5)
                             st.rerun()
                         else:
                             st.error(msg)
         st.markdown("---")
 
-    # --- SEZIONE 2: CARICAMENTO CON DEBUG "VERITÀ ASSOLUTA" ---
+    # --- SEZIONE 2: CARICAMENTO ---
     st.markdown("### ➕ Aggiungi Nuovo Contenuto")
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -168,15 +184,13 @@ if task_type == "🧠 Carica e Gestisci Memoria":
         files_processed = 0
         debug_info = []
         
-        # ID pulito per debug
         clean_cid = rag._clean_id(client_id)
-        debug_info.append(f"🔑 ID Cliente usato per il salvataggio: '{clean_cid}'")
+        debug_info.append(f"🔑 ID Cliente per salvataggio: '{clean_cid}'")
         
         if uploaded_files:
             for uploaded_file in uploaded_files:
                 try:
                     extracted = ""
-                    # Reset del puntatore del file per sicurezza
                     uploaded_file.seek(0)
                     
                     if uploaded_file.type == "text/plain":
@@ -192,18 +206,14 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                     snippet = extracted.strip()[:100].replace("\n", " ") + ("..." if char_count > 100 else "")
                     
                     debug_info.append(f"📄 **{uploaded_file.name}**")
-                    debug_info.append(f"   ↳ Tipo rilevato: {uploaded_file.type}")
                     debug_info.append(f"   ↳ Caratteri estratti: {char_count}")
-                    debug_info.append(f"   ↳ Anteprima testo: '{snippet}'")
+                    debug_info.append(f"   ↳ Anteprima: '{snippet}'")
                     
                     if char_count > 0:
                         final_text += f"\n\n--- FILE: {uploaded_file.name} ---\n" + extracted
                         files_processed += 1
-                    else:
-                        debug_info.append(f"   ⚠️ ATTENZIONE: 0 caratteri utili estratti.")
-                        
                 except Exception as e:
-                    debug_info.append(f"❌ **{uploaded_file.name}**: Errore critico ({str(e)})")
+                    debug_info.append(f"❌ **{uploaded_file.name}**: Errore ({str(e)})")
         
         if manual_text.strip():
             final_text += "\n\n--- TESTO MANUALE ---\n" + manual_text.strip()
@@ -211,33 +221,31 @@ if task_type == "🧠 Carica e Gestisci Memoria":
             
         final_text = final_text.strip()
         
-        # PANNELLO DI DEBUG "VERITÀ ASSOLUTA" (Sempre visibile dopo il click)
-        st.markdown("### 🔍 Pannello di Debug (Cosa ha visto il sistema)")
-        debug_output = "\n".join(debug_info)
-        debug_output += f"\n\n✅ **TOTALE TESTO FINALE DA SALVARE:** {len(final_text)} caratteri."
-        
-        st.markdown(f'<div class="debug-box">{debug_output}</div>', unsafe_allow_html=True)
+        st.markdown("### 🔍 Pannello di Debug")
+        st.markdown(f'<div class="debug-box">' + "\n".join(debug_info) + f"\n\n✅ **TOTALE TESTO DA SALVARE:** {len(final_text)} caratteri.</div>", unsafe_allow_html=True)
 
-        # LOGICA DI SALVATAGGIO
         if final_text and len(final_text) >= 50:
             with st.spinner(f"Elaborazione e salvataggio in corso..."):
                 result = rag.add_document(client_id, final_text, doc_type)
                 st.success(result)
                 
-                # Verifica immediata post-salvataggio
-                time.sleep(1)
-                new_summary = rag.get_memory_summary(client_id)
-                if doc_type in new_summary:
-                    st.info(f"✅ Verifica: La categoria '{doc_type}' è ora presente nel database con {new_summary[doc_type]} blocchi.")
-                else:
-                    st.warning("⚠️ Attenzione: Il salvataggio sembra riuscito, ma la categoria non è visibile nel riepilogo immediato.")
+                # PAUSA DI INDICIZZAZIONE QDRANT (FONDAMENTALE)
+                time.sleep(3) 
                 
-                time.sleep(1.5)
+                new_summary = rag.get_memory_summary(client_id)
+                total_points = new_summary.get("_totale_punti_db", 0)
+                
+                if total_points > 0:
+                    st.success(f"✅ Verifica completata: Il database contiene ora {total_points} blocchi per questo cliente.")
+                else:
+                    st.warning("⚠️ Il database non riporta ancora i dati. Attendi 5 secondi e ricarica la pagina (F5).")
+                
+                time.sleep(1)
                 st.rerun()
         elif final_text and len(final_text) < 50:
-            st.error("⛔ BLOCCATO: Il testo estratto è troppo breve (meno di 50 caratteri). Il sistema lo scarta per evitare spazzatura nel database.")
+            st.error("⛔ BLOCCATO: Testo troppo breve (< 50 caratteri).")
         else:
-            st.error("⛔ BLOCCATO: Nessun testo valido trovato. Guarda il Pannello di Debug qui sopra per capire perché (probabilmente 0 caratteri estratti).")
+            st.error("⛔ BLOCCATO: Nessun testo valido trovato. Controlla il Debug.")
 
 # ==========================================
 # AGENTE 2: PIANO EDITORIALE

@@ -93,24 +93,41 @@ def add_document(client_id: str, text: str, doc_type: str = "generico"):
     vectorstore.add_texts(texts=chunks, metadatas=metadatas)
     return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Categoria: {doc_type})."
 
+# ==========================================
+# FUNZIONE AGGIORNATA CON "RAW COUNT" (VERITÀ ASSOLUTA)
+# ==========================================
 def get_memory_summary(client_id: str):
-    """Restituisce un dizionario con il numero di blocchi per ogni categoria del cliente."""
     client_id_clean = _clean_id(client_id)
     try:
+        # 1. Chiediamo a Qdrant QUANTI elementi ci sono in totale per questo cliente (bypassa cache UI)
+        count_result = client.count(
+            collection_name=collection_knowledge,
+            count_filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))]),
+            exact=True
+        )
+        total_points = count_result.count
+        
+        if total_points == 0:
+            return {"avviso": f"Nessun dato trovato nel DB per '{client_id_clean}'."}
+
+        # 2. Se ci sono dati, leggiamo le categorie
         records, _ = client.scroll(
             collection_name=collection_knowledge,
-            limit=5000,
+            limit=total_points + 100, # Prendiamo tutto senza limiti
             with_payload=True,
             with_vectors=False,
             scroll_filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
         )
-        summary = {}
+        
+        summary = {"_totale_punti_db": total_points}
         for record in records:
             doc_type = record.payload.get("type", "generico")
             summary[doc_type] = summary.get(doc_type, 0) + 1
+        
         return summary
     except Exception as e:
         return {"errore": str(e)}
+# ==========================================
 
 def delete_category(client_id: str, doc_type: str):
     client_id_clean = _clean_id(client_id)
