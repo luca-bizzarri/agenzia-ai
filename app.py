@@ -204,7 +204,6 @@ elif task_type == "📅 Piano Editoriale Completo":
                 canali_str = "\n".join([f"- {k}: {v} contenuti" for k, v in canali_config.items()])
                 longform_str = "\n".join([f"- {k}: {v} contenuti" for k, v in longform_config.items()]) if longform_config else "Nessuno"
                 
-                # PROMPT AGGIORNATO: SEVERO SU COPY COMPLETI E ALLINEAMENTO AL TEMA
                 prompt_pe = (
                     f"Sei un Content Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT usando il PUNTO E VIRGOLA (;) come separatore.\n\n"
                     f"## CONTESTO CLIENTE (USA QUESTO COME BASE ASSOLUTA):\n{context}\n\n"
@@ -212,14 +211,14 @@ elif task_type == "📅 Piano Editoriale Completo":
                     f"Social:\n{canali_str}\nLong-form:\n{longform_str}\n\n"
                     f"## COLONNE CSV OBBLIGATORIE (separate da ; ):\nTipo;Data;Titolo/Tema;Hook;Copy/Script;CTA;Brief_Visivo;Hashtag_SEO;Note\n\n"
                     f"## ISTRUZIONI DI COMPILAZIONE CRITICHE E VINCOLANTI:\n"
-                    f"1. **ALLINEAMENTO AL TEMA CENTRALE**: OGNI singolo contenuto (titolo, hook, copy) DEVE ruotare attorno al tema '{tema}'. È vietato generare contenuti che non siano direttamente collegati a questo tema. Il tema è il filo conduttore di TUTTO il piano.\n"
-                    f"2. **COPY COMPLETI E LUNGHI**: I copy NON devono essere brevi o accennati. Devono essere post COMPLETI, pronti per la pubblicazione.\n"
-                    f"   - Per LinkedIn: MINIMO 150-250 parole, con struttura articolata (intro, sviluppo, conclusione), emoji professionali, e formattazione a paragrafi.\n"
-                    f"   - Per Instagram: MINIMO 80-150 parole, con emoji, hashtag integrati nel testo, e call-to-action chiara.\n"
-                    f"   - Per Blog/Newsletter: MINIMO 400-600 parole, con struttura completa (titolo, intro, punti chiave, conclusione).\n"
-                    f"3. **VIETATO**: Usare placeholder come '[Inserisci testo]', 'Lorem ipsum', 'Descrivi qui', o frasi generiche di 2-3 righe. Scrivi il testo REALE e COMPLETO.\n"
-                    f"4. **Brief_Visivo**: Descrivi in dettaglio l'immagine/video (soggetto, colori, azione, mood), allineandoti al brand book del contesto.\n"
-                    f"5. Genera ESATTAMENTE il numero di contenuti richiesti. Non inventare dati non presenti nel contesto. NON usare il punto e virgola all'interno dei testi. Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
+                    f"1. **ALLINEAMENTO AL TEMA CENTRALE**: OGNI singolo contenuto (titolo, hook, copy) DEVE ruotare attorno al tema '{tema}'. È vietato generare contenuti che non siano direttamente collegati a questo tema.\n"
+                    f"2. **COPY COMPLETI E LUNGHI**: I copy NON devono essere brevi. Devono essere post COMPLETI, pronti per la pubblicazione.\n"
+                    f"   - Per LinkedIn: MINIMO 150-250 parole, con struttura articolata, emoji professionali e paragrafi.\n"
+                    f"   - Per Instagram: MINIMO 80-150 parole, con emoji e call-to-action chiara.\n"
+                    f"   - Per Blog/Newsletter: MINIMO 400-600 parole, con struttura completa.\n"
+                    f"3. **VIETATO**: Usare placeholder come '[Inserisci testo]', 'Lorem ipsum', o frasi generiche di 2-3 righe. Scrivi il testo REALE e COMPLETO.\n"
+                    f"4. **Brief_Visivo**: Descrivi in dettaglio l'immagine/video (soggetto, colori, azione, mood).\n"
+                    f"5. Genera ESATTAMENTE il numero di contenuti richiesti. NON usare il punto e virgola all'interno dei testi. Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
                 )
                 response = rag.llm.invoke(prompt_pe).content
                 try:
@@ -230,29 +229,70 @@ elif task_type == "📅 Piano Editoriale Completo":
                     st.success(f"✅ Piano generato con {len(df)} contenuti!")
                     st.data_editor(df, num_rows="dynamic", key="editable_df", height=600, use_container_width=True)
                     
-                    # --- GENERAZIONE DOCX ---
+                    # ==========================================
+                    # NUOVA GENERAZIONE DOCX STRUTTURATA (NO TABELLA)
+                    # ==========================================
                     doc = docx.Document()
-                    doc.add_heading(f'Piano Editoriale - {client_id}', 0)
+                    
+                    # Intestazione
+                    doc.add_heading(f'Piano Editoriale: {client_id}', 0)
                     doc.add_paragraph(f'Periodo: {mese} | Obiettivo: {obiettivo} | Durata: {durata}')
                     doc.add_paragraph(f'Tema Centrale: {tema}')
+                    doc.add_paragraph('_' * 50)
                     doc.add_paragraph(' ')
                     
-                    table = doc.add_table(rows=1, cols=len(df.columns))
-                    table.style = 'Table Grid'
-                    hdr_cells = table.rows[0].cells
-                    for i, column_name in enumerate(df.columns):
-                        hdr_cells[i].text = str(column_name)
-                        hdr_cells[i].paragraphs[0].runs[0].font.bold = True
+                    # Itera sui contenuti e crea sezioni di testo
+                    for index, row in df.iterrows():
+                        # Titolo del contenuto
+                        title = str(row.get('Titolo/Tema', f'Contenuto {index + 1}'))
+                        doc.add_heading(f"{index + 1}. {title}", level=1)
+                        
+                        # Sottotitolo con Tipo e Data
+                        tipo = str(row.get('Tipo', 'N/A'))
+                        data = str(row.get('Data', 'N/A'))
+                        p_meta = doc.add_paragraph()
+                        runner = p_meta.add_run(f"📌 Tipo: {tipo}  |  📅 Data: {data}")
+                        runner.bold = True
+                        runner.font.color.rgb = docx.shared.RGBColor(100, 100, 100)
+                        
+                        # Hook
+                        if pd.notna(row.get('Hook')) and str(row.get('Hook')).strip():
+                            doc.add_paragraph("🎣 Hook:", style='Heading 3')
+                            doc.add_paragraph(str(row.get('Hook')))
+                        
+                        # Copy/Script (Gestisce i paragrafi separati da \n)
+                        if pd.notna(row.get('Copy/Script')) and str(row.get('Copy/Script')).strip():
+                            doc.add_paragraph("📝 Copy / Script:", style='Heading 3')
+                            copy_text = str(row.get('Copy/Script'))
+                            for paragraph in copy_text.split('\n'):
+                                if paragraph.strip():
+                                    doc.add_paragraph(paragraph.strip())
+                        
+                        # CTA
+                        if pd.notna(row.get('CTA')) and str(row.get('CTA')).strip():
+                            doc.add_paragraph("👉 Call to Action (CTA):", style='Heading 3')
+                            doc.add_paragraph(str(row.get('CTA')))
+                        
+                        # Brief Visivo
+                        if pd.notna(row.get('Brief_Visivo')) and str(row.get('Brief_Visivo')).strip():
+                            doc.add_paragraph("🎨 Brief Visivo:", style='Heading 3')
+                            doc.add_paragraph(str(row.get('Brief_Visivo')))
+                        
+                        # Hashtag e Note
+                        hashtags = str(row.get('Hashtag_SEO', '')).strip()
+                        notes = str(row.get('Note', '')).strip()
+                        if hashtags or notes:
+                            doc.add_paragraph(f"🏷️ Hashtag/SEO: {hashtags}  |  📌 Note: {notes}", style='Normal')
+                        
+                        # Linea divisoria tra un contenuto e l'altro
+                        doc.add_paragraph("__________________________________________________________________________________________")
+                        doc.add_paragraph(' ')
                     
-                    for _, row in df.iterrows():
-                        row_cells = table.add_row().cells
-                        for i, item in enumerate(row):
-                            text = str(item).replace('\n', ' ') if pd.notna(item) else ""
-                            row_cells[i].text = text
-                    
+                    # Salva il documento in memoria
                     docx_buffer = io.BytesIO()
                     doc.save(docx_buffer)
                     docx_buffer.seek(0)
+                    # ==========================================
                     
                     col_dl1, col_dl2 = st.columns(2)
                     with col_dl1:
