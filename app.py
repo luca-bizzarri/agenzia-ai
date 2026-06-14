@@ -90,7 +90,7 @@ task_type = st.radio("🤖 Scegli l'Agente", [
 st.markdown("---")
 
 # ==========================================
-# AGENTE 1: MEMORIA
+# AGENTE 1: MEMORIA (Invariato, funziona perfettamente)
 # ==========================================
 if task_type == "🧠 Carica e Gestisci Memoria":
     st.markdown('<div class="sub-header">Alimenta o modifica la memoria strategica del cliente</div>', unsafe_allow_html=True)
@@ -126,7 +126,6 @@ if task_type == "🧠 Carica e Gestisci Memoria":
     
     st.markdown("---")
     st.markdown("### ➕ Aggiungi Nuovo Contenuto")
-    
     with st.expander("📎 Carica File o Testo Manuale", expanded=False):
         col1, col2 = st.columns([2, 1])
         with col1:
@@ -168,8 +167,8 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                 time.sleep(1.5); st.rerun()
     
     with st.expander("🌐 Scansiona Link Web (Batch Multi-URL)", expanded=True):
-        st.info("💡 Incolla qui sotto tutti gli URL. Il sistema li estrarrà automaticamente, anche se separati da spazi, virgole o a capo, e visiterà ogni pagina per leggerne il contenuto.")
-        urls_text = st.text_area("📋 Incolla gli URL (in qualsiasi formato)", height=200, placeholder="https://www.sitocliente.it/blog, www.competitor1.it/about \n www.fonte-autorevole.com/articolo")
+        st.info("💡 Incolla qui sotto tutti gli URL. Il sistema li estrarrà automaticamente e visiterà ogni pagina per leggerne il contenuto.")
+        urls_text = st.text_area("📋 Incolla gli URL (in qualsiasi formato)", height=200, placeholder="https://www.sitocliente.it/blog, www.competitor1.it/about")
         urls_file = st.file_uploader("Oppure carica un file TXT/CSV con la lista URL", type=["txt", "csv"], key="urls_file")
         
         if urls_file is not None:
@@ -181,118 +180,178 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                 st.error(f"❌ Errore lettura file: {e}")
         
         if st.button("🚀 Scansiona e Salva Tutti i Link", type="primary", use_container_width=True):
-            # REGEX ROBUSTA: Estrae TUTTI gli URL (https:// o www.) ignorando spazi, virgole o a capo
             raw_urls = re.findall(r'https?://[^\s,;)]+|www\.[^\s,;)]+', urls_text)
-            
-            # Pulisce i link da eventuali punteggiatura finale (punti, virgolette) e rimuove duplicati
             urls_list = list(set([u.strip('.,)>"\'') for u in raw_urls]))
-            
             if not urls_list:
-                st.warning("⚠️ Nessun URL valido trovato. Assicurati di incollare link che iniziano con http://, https:// o www.")
+                st.warning("⚠️ Nessun URL valido trovato.")
             else:
                 st.info(f"🎯 Trovati **{len(urls_list)} link** unici. Avvio scansione...")
                 progress_bar = st.progress(0)
                 status_container = st.container()
                 results_log = []
-                
                 for idx, url in enumerate(urls_list):
                     with status_container:
                         st.write(f"🔄 Scansione {idx + 1}/{len(urls_list)}: `{url}`")
                     success, msg = rag.scrape_and_save_url(client_id, url, doc_type="link_riferimento")
                     results_log.append(f"{'✅' if success else '❌'} {msg}")
                     progress_bar.progress((idx + 1) / len(urls_list))
-                    time.sleep(0.3) # Pausa breve per non sovraccaricare i server
-                
+                    time.sleep(0.3)
                 st.markdown("### 📊 Risultato Scansione")
                 st.markdown(f'<div class="debug-box">' + "\n".join(results_log) + "</div>", unsafe_allow_html=True)
                 success_count = sum(1 for r in results_log if r.startswith('✅'))
-                st.success(f"✅ Completato! {success_count}/{len(urls_list)} link scansionati e salvati con successo.")
+                st.success(f"✅ Completato! {success_count}/{len(urls_list)} link scansionati e salvati.")
                 time.sleep(2)
                 st.rerun()
 
 # ==========================================
-# AGENTE 2: PED
+# AGENTE 2: PED (CON TUTTE LE OPZIONI E GENERAZIONE A BATCH)
 # ==========================================
 elif task_type == "📅 Piano Editoriale Completo":
-    st.markdown('<div class="sub-header">Generazione professionale: 3 contenuti alla volta, copy profondi e strutturati</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Componi il tuo piano editoriale completo. Il sistema genererà i contenuti in batch per garantire copy lunghi e di alta qualità.</div>', unsafe_allow_html=True)
+    
     col1, col2, col3 = st.columns(3)
     with col1: mese = st.text_input("📅 Periodo", "Gennaio 2025")
     with col2: obiettivo = st.selectbox("🎯 Obiettivo", ["Brand Awareness", "Lead Generation", "Lancio Prodotto", "Fidelizzazione", "Engagement"])
     with col3: durata = st.selectbox("⏱️ Durata", ["1 settimana", "2 settimane", "1 mese", "3 mesi"])
+    
     tema = st.text_input("💡 Tema Centrale", "Es. Posizionamento come esperti")
     istruzioni_extra = st.text_area("📝 Note specifiche", placeholder="Es. Evitare la parola X, enfatizzare Y...")
     
     st.markdown("---")
-    st.markdown("### 📱 2. Contenuti Social")
+    st.markdown("### 📱 1. Contenuti Social")
     canali_config = {}
-    canali_disponibili = {"LinkedIn": "Post LinkedIn", "Instagram_Feed": "Post IG Feed", "Instagram_Reels": "Reel IG", "Instagram_Stories": "Story IG", "Facebook": "Post FB", "TikTok": "TikTok"}
+    canali_disponibili = {
+        "LinkedIn": "Post LinkedIn", 
+        "Instagram_Feed": "Post IG Feed", 
+        "Instagram_Reels": "Reel IG", 
+        "Instagram_Stories": "Story IG", 
+        "Facebook": "Post FB", 
+        "TikTok": "TikTok"
+    }
     cols = st.columns(2)
     for idx, (canale, label) in enumerate(canali_disponibili.items()):
         with cols[idx % 2]:
             quant = st.slider(f"**{label}**", 0, 20, 0, key=f"slider_{canale}")
             if quant > 0: canali_config[canale] = quant
 
-    totale = sum(canali_config.values())
+    st.markdown("---")
+    st.markdown("### 🎙️ 2. Contenuti Long-Form")
+    longform_config = {}
+    longform_disponibili = {
+        "Blog_Article": "Articoli Blog", 
+        "Podcast_Episode": "Episodi Podcast", 
+        "Newsletter": "Newsletter", 
+        "Video_YouTube": "Video YouTube"
+    }
+    cols_lf = st.columns(2)
+    for idx, (tipo, label) in enumerate(longform_disponibili.items()):
+        with cols_lf[idx % 2]:
+            quant = st.slider(f"**{label}**", 0, 10, 0, key=f"slider_lf_{tipo}")
+            if quant > 0: longform_config[tipo] = quant
+
+    totale = sum(canali_config.values()) + sum(longform_config.values())
+    
     if totale == 0:
         st.warning("⚠️ Configura almeno un contenuto per generare il piano.")
     else:
-        st.success(f"🎯 Piano configurato: {totale} contenuti totali (generati in batch di 3 per massima qualità)")
-        if st.button(f"🚀 GENERA PRIMI 3 CONTENUTI", type="primary", use_container_width=True):
-            with st.spinner("Recupero contesto e scrittura copy professionali..."):
+        st.success(f"🎯 Piano configurato: {totale} contenuti totali.")
+        st.info("💡 Il sistema elaborerà la richiesta in gruppi di 3-4 contenuti alla volta per garantire che ogni copy sia lungo, profondo e privo di allucinazioni.")
+        
+        if st.button(f"🚀 GENERA PIANO COMPLETO ({totale} contenuti)", type="primary", use_container_width=True):
+            with st.spinner("Preparazione contesto e avvio generazione a batch..."):
                 context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce, link riferimento")
                 
-                with st.expander("🔍 Vedi cosa sta leggendo l'AI", expanded=False):
-                    st.markdown(f'<div class="context-box">{context}</div>', unsafe_allow_html=True)
+                # Creiamo una lista piatta di tutti i contenuti richiesti
+                request_list = []
+                for ch, qty in canali_config.items():
+                    request_list.extend([ch] * qty)
+                for lf, qty in longform_config.items():
+                    request_list.extend([lf] * qty)
                 
-                canali_list = list(canali_config.keys())[:3]
-                prompt_pe = (
-                    f"Sei un Senior Copywriter. Genera ESATTAMENTE 3 contenuti in formato JSON STRICT.\n\n"
-                    f"## CONTESTO CLIENTE:\n{context}\n\n"
-                    f"## CONFIGURAZIONE:\nPeriodo: {mese} | Obiettivo: {obiettivo} | Tema Centrale: {tema} | Note: {istruzioni_extra}\n"
-                    f"Canali: {', '.join(canali_list)}\n\n"
-                    f"## FORMATO JSON:\n[{{\"tipo\": \"...\", \"data\": \"YYYY-MM-DD\", \"titolo\": \"...\", \"hook\": \"...\", \"copy\": \"...\", \"cta\": \"...\", \"brief_visivo\": \"...\", \"hashtag_seo\": \"...\", \"note\": \"...\"}}]\n\n"
-                    f"## VINCOLI:\n1. LinkedIn: 150-250 parole. Instagram: 80-150 parole.\n2. Struttura: Hook → 2-3 paragrafi → CTA.\n3. ALLINEAMENTO TEMA: Ruota esplicitamente attorno a '{tema}'.\n4. VIETATO: Placeholder o frasi generiche. Scrivi testi PRONTI ALLA PUBBLICAZIONE.\n5. Rispondi SOLO con JSON valido."
-                )
-                response = rag.llm.invoke(prompt_pe).content
+                all_contents = []
+                batch_size = 3
+                total_batches = (len(request_list) + batch_size - 1) // batch_size
                 
-                try:
-                    clean_json = response.replace("```json", "").replace("```", "").strip()
-                    data_list = json.loads(clean_json)
-                    df = pd.DataFrame(data_list)
-                    st.session_state['ped_batch'] = df
-                    st.success("✅ 3 contenuti generati con successo!")
-                    st.data_editor(df, num_rows="dynamic", key="editable_df", height=600, use_container_width=True)
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                for i in range(0, len(request_list), batch_size):
+                    batch = request_list[i:i+batch_size]
+                    current_batch_num = (i // batch_size) + 1
+                    status_text.text(f"🔄 Generazione batch {current_batch_num}/{total_batches} ({len(batch)} contenuti: {', '.join(batch)})...")
                     
-                    doc = docx.Document()
-                    doc.add_heading(f'Piano Editoriale: {client_id}', 0)
-                    doc.add_paragraph(f'Periodo: {mese} | Obiettivo: {obiettivo} | Tema: {tema}')
-                    doc.add_paragraph('_' * 50)
-                    for idx, row in df.iterrows():
-                        doc.add_heading(f"{idx + 1}. {row.get('titolo', 'Contenuto')}", level=1)
-                        doc.add_paragraph(f"📌 Tipo: {row.get('tipo')} | 📅 Data: {row.get('data')}", style='Normal')
-                        if row.get('hook'): doc.add_paragraph(f"🎣 Hook: {row['hook']}")
-                        if row.get('copy'): 
-                            doc.add_paragraph("📝 Copy:", style='Heading 3')
-                            for p in str(row['copy']).split('\n'): doc.add_paragraph(p.strip())
-                        if row.get('cta'): doc.add_paragraph(f"👉 CTA: {row['cta']}")
-                        if row.get('brief_visivo'): doc.add_paragraph(f"🎨 Brief: {row['brief_visivo']}")
-                        doc.add_paragraph("__________________________________________________________________________________________")
+                    # Mappatura nomi per il prompt
+                    batch_labels = []
+                    for item in batch:
+                        if item in canali_disponibili: batch_labels.append(canali_disponibili[item])
+                        elif item in longform_disponibili: batch_labels.append(longform_disponibili[item])
                     
-                    buf = io.BytesIO()
-                    doc.save(buf); buf.seek(0)
-                    st.download_button("📥 Scarica WORD", buf, f"PED_{client_id}_{mese.replace(' ','_')}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-                except Exception as e:
-                    st.error("⚠️ Errore parsing JSON. Output grezzo:"); st.code(response)
+                    prompt_pe = (
+                        f"Sei un Senior Copywriter e Content Strategist. Genera ESATTAMENTE {len(batch)} contenuti in formato JSON STRICT.\n\n"
+                        f"## CONTESTO CLIENTE (BASE ASSOLUTA):\n{context}\n\n"
+                        f"## CONFIGURAZIONE:\nPeriodo: {mese} | Obiettivo: {obiettivo} | Tema Centrale: {tema} | Note: {istruzioni_extra}\n"
+                        f"Tipologie da generare in questo batch: {', '.join(batch_labels)}\n\n"
+                        f"## FORMATO OUTPUT JSON:\n[{{\"tipo\": \"...\", \"data\": \"YYYY-MM-DD\", \"titolo\": \"...\", \"hook\": \"...\", \"copy\": \"...\", \"cta\": \"...\", \"brief_visivo\": \"...\", \"hashtag_seo\": \"...\", \"note\": \"...\"}}]\n\n"
+                        f"## VINCOLI OBBLIGATORI:\n"
+                        f"1. **LUNGHEZZA COPY**: LinkedIn = 150-250 parole. Instagram = 80-150 parole. Blog/Newsletter = 400-600 parole. TikTok/Reel = Script dettagliato.\n"
+                        f"2. **STRUTTURA**: Hook forte → 2-3 paragrafi di sviluppo (pain, soluzione, prova) → CTA chiara.\n"
+                        f"3. **ALLINEAMENTO TEMA**: Ogni contenuto deve ruotare ESPlicitamente attorno a: '{tema}'.\n"
+                        f"4. **VIETATO**: Placeholder, 'Lorem ipsum', frasi generiche. Scrivi testi PRONTI ALLA PUBBLICAZIONE.\n"
+                        f"5. Rispondi SOLO con il JSON valido, senza markdown o testo extra."
+                    )
+                    
+                    try:
+                        response = rag.llm.invoke(prompt_pe).content
+                        clean_json = response.replace("```json", "").replace("```", "").strip()
+                        data_list = json.loads(clean_json)
+                        all_contents.extend(data_list)
+                    except Exception as e:
+                        st.error(f"⚠️ Errore nel batch {current_batch_num}. Output grezzo:"); st.code(response)
+                    
+                    progress_bar.progress(min(1.0, (i + batch_size) / len(request_list)))
+                    time.sleep(1) # Pausa per non sovraccaricare l'API
 
-    if 'ped_batch' in st.session_state:
+                status_text.text("✅ Generazione completata!")
+                time.sleep(1)
+                status_text.empty()
+                progress_bar.empty()
+                
+                # Salvataggio in sessione e visualizzazione
+                df = pd.DataFrame(all_contents)
+                st.session_state['ped_full_plan'] = df
+                st.success(f"✅ Piano completo generato con successo! ({len(df)} contenuti)")
+                st.data_editor(df, num_rows="dynamic", key="editable_df", height=600, use_container_width=True)
+                
+                # Export DOCX
+                doc = docx.Document()
+                doc.add_heading(f'Piano Editoriale: {client_id}', 0)
+                doc.add_paragraph(f'Periodo: {mese} | Obiettivo: {obiettivo} | Durata: {durata}')
+                doc.add_paragraph(f'Tema Centrale: {tema}')
+                doc.add_paragraph('_' * 50)
+                for idx, row in df.iterrows():
+                    doc.add_heading(f"{idx + 1}. {row.get('titolo', 'Contenuto')}", level=1)
+                    doc.add_paragraph(f"📌 Tipo: {row.get('tipo')} | 📅 Data: {row.get('data')}", style='Normal')
+                    if row.get('hook'): doc.add_paragraph(f"🎣 Hook: {row['hook']}")
+                    if row.get('copy'): 
+                        doc.add_paragraph("📝 Copy:", style='Heading 3')
+                        for p in str(row['copy']).split('\n'): doc.add_paragraph(p.strip())
+                    if row.get('cta'): doc.add_paragraph(f"👉 CTA: {row['cta']}")
+                    if row.get('brief_visivo'): doc.add_paragraph(f"🎨 Brief: {row['brief_visivo']}")
+                    doc.add_paragraph("__________________________________________________________________________________________")
+                
+                buf = io.BytesIO()
+                doc.save(buf); buf.seek(0)
+                st.download_button("📥 Scarica Piano in WORD (DOCX)", buf, f"PED_{client_id}_{mese.replace(' ','_')}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+
+    if 'ped_full_plan' in st.session_state:
         st.markdown("---")
         if st.button("💾 Salva e Insegna (Opzione B)", type="secondary"):
             with st.spinner("Analisi correzioni in corso..."):
-                result = rag.save_and_teach(client_id, json.dumps(st.session_state['ped_batch'].to_dict(orient='records')), st.session_state['editable_df'].to_json(orient='records'))
+                result = rag.save_and_teach(client_id, json.dumps(st.session_state['ped_full_plan'].to_dict(orient='records')), st.session_state['editable_df'].to_json(orient='records'))
                 st.success(result)
 
 # ==========================================
-# AGENTE 3: REPORT ADS
+# AGENTE 3: REPORT ADS (Invariato)
 # ==========================================
 elif task_type == "📊 Report ADS Performance":
     st.markdown('<div class="sub-header">Genera report PDF professionale con analisi performance ADS</div>', unsafe_allow_html=True)
@@ -394,7 +453,7 @@ elif task_type == "📊 Report ADS Performance":
                     st.error(f"❌ Errore: {str(e)}")
 
 # ==========================================
-# AGENTE 4: REPORT SOCIAL
+# AGENTE 4: REPORT SOCIAL (Invariato)
 # ==========================================
 elif task_type == "📱 Report Social Organico":
     st.markdown('<div class="sub-header">Genera report PDF con analisi performance organica social</div>', unsafe_allow_html=True)
@@ -497,7 +556,7 @@ elif task_type == "📱 Report Social Organico":
                     st.error(f"❌ Errore: {str(e)}")
 
 # ==========================================
-# AGENTE 5: COMPETITOR
+# AGENTE 5: COMPETITOR (Invariato)
 # ==========================================
 elif task_type == "🔍 Analisi Competitor / Trend":
     st.markdown('<div class="sub-header">Ricerca sul web trend o competitor</div>', unsafe_allow_html=True)
