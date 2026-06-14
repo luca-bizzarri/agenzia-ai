@@ -13,6 +13,7 @@ st.markdown("""
     .main-header {font-size: 2.2rem; font-weight: bold; color: #1E88E5; margin-bottom: 0.5rem;}
     .sub-header {font-size: 1.1rem; color: #555; margin-bottom: 1.5rem;}
     .memory-item {background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;}
+    .debug-box {background-color: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 0.9rem; white-space: pre-wrap;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -123,7 +124,7 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                             st.error(msg)
         st.markdown("---")
 
-    # --- SEZIONE 2: CARICAMENTO NUOVI DATI CON DEBUG ---
+    # --- SEZIONE 2: CARICAMENTO CON DEBUG "VERITÀ ASSOLUTA" ---
     st.markdown("### ➕ Aggiungi Nuovo Contenuto")
     col1, col2 = st.columns([2, 1])
     with col1:
@@ -167,10 +168,17 @@ if task_type == "🧠 Carica e Gestisci Memoria":
         files_processed = 0
         debug_info = []
         
+        # ID pulito per debug
+        clean_cid = rag._clean_id(client_id)
+        debug_info.append(f"🔑 ID Cliente usato per il salvataggio: '{clean_cid}'")
+        
         if uploaded_files:
             for uploaded_file in uploaded_files:
                 try:
                     extracted = ""
+                    # Reset del puntatore del file per sicurezza
+                    uploaded_file.seek(0)
+                    
                     if uploaded_file.type == "text/plain":
                         extracted = uploaded_file.read().decode("utf-8")
                     elif uploaded_file.type == "application/pdf":
@@ -178,19 +186,24 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                         extracted = "\n".join([page.extract_text() or "" for page in reader.pages])
                     elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                         doc = docx.Document(uploaded_file)
-                        extracted = "\n".join([para.text for para in doc.paragraphs])
+                        extracted = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
                     
                     char_count = len(extracted.strip())
-                    debug_info.append(f"📄 **{uploaded_file.name}**: {char_count} caratteri estratti.")
+                    snippet = extracted.strip()[:100].replace("\n", " ") + ("..." if char_count > 100 else "")
+                    
+                    debug_info.append(f"📄 **{uploaded_file.name}**")
+                    debug_info.append(f"   ↳ Tipo rilevato: {uploaded_file.type}")
+                    debug_info.append(f"   ↳ Caratteri estratti: {char_count}")
+                    debug_info.append(f"   ↳ Anteprima testo: '{snippet}'")
                     
                     if char_count > 0:
                         final_text += f"\n\n--- FILE: {uploaded_file.name} ---\n" + extracted
                         files_processed += 1
                     else:
-                        debug_info.append(f"⚠️ **{uploaded_file.name}**: 0 caratteri (Forse è un PDF scansionato/immagine?).")
+                        debug_info.append(f"   ⚠️ ATTENZIONE: 0 caratteri utili estratti.")
                         
                 except Exception as e:
-                    debug_info.append(f"❌ **{uploaded_file.name}**: Errore ({str(e)})")
+                    debug_info.append(f"❌ **{uploaded_file.name}**: Errore critico ({str(e)})")
         
         if manual_text.strip():
             final_text += "\n\n--- TESTO MANUALE ---\n" + manual_text.strip()
@@ -198,22 +211,33 @@ if task_type == "🧠 Carica e Gestisci Memoria":
             
         final_text = final_text.strip()
         
-        # PANNELLO DI DEBUG VISIVO
-        with st.expander("🔍 Pannello di Debug (Clicca per vedere cosa ha letto il sistema)"):
-            for info in debug_info:
-                st.write(info)
-            st.write(f"**Totale testo finale da salvare:** {len(final_text)} caratteri.")
+        # PANNELLO DI DEBUG "VERITÀ ASSOLUTA" (Sempre visibile dopo il click)
+        st.markdown("### 🔍 Pannello di Debug (Cosa ha visto il sistema)")
+        debug_output = "\n".join(debug_info)
+        debug_output += f"\n\n✅ **TOTALE TESTO FINALE DA SALVARE:** {len(final_text)} caratteri."
+        
+        st.markdown(f'<div class="debug-box">{debug_output}</div>', unsafe_allow_html=True)
 
+        # LOGICA DI SALVATAGGIO
         if final_text and len(final_text) >= 50:
-            with st.spinner(f"Elaborazione di {files_processed} file in corso..."):
+            with st.spinner(f"Elaborazione e salvataggio in corso..."):
                 result = rag.add_document(client_id, final_text, doc_type)
                 st.success(result)
+                
+                # Verifica immediata post-salvataggio
+                time.sleep(1)
+                new_summary = rag.get_memory_summary(client_id)
+                if doc_type in new_summary:
+                    st.info(f"✅ Verifica: La categoria '{doc_type}' è ora presente nel database con {new_summary[doc_type]} blocchi.")
+                else:
+                    st.warning("⚠️ Attenzione: Il salvataggio sembra riuscito, ma la categoria non è visibile nel riepilogo immediato.")
+                
                 time.sleep(1.5)
                 st.rerun()
         elif final_text and len(final_text) < 50:
-            st.warning("⚠️ Il testo estratto è troppo breve (meno di 50 caratteri) per creare un blocco di memoria valido.")
+            st.error("⛔ BLOCCATO: Il testo estratto è troppo breve (meno di 50 caratteri). Il sistema lo scarta per evitare spazzatura nel database.")
         else:
-            st.warning("⚠️ Nessun testo valido trovato. Controlla il Pannello di Debug qui sopra.")
+            st.error("⛔ BLOCCATO: Nessun testo valido trovato. Guarda il Pannello di Debug qui sopra per capire perché (probabilmente 0 caratteri estratti).")
 
 # ==========================================
 # AGENTE 2: PIANO EDITORIALE
