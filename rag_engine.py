@@ -50,8 +50,13 @@ try:
 except Exception:
     pass
 
+# INDICI PAYLOAD CORRETTI PER LA CHIAVE ANNIDATA
 try:
-    client.create_payload_index(collection_name=collection_knowledge, field_name="client_id", field_schema=PayloadSchemaType.KEYWORD)
+    client.create_payload_index(collection_name=collection_knowledge, field_name="metadata.client_id", field_schema=PayloadSchemaType.KEYWORD)
+except Exception:
+    pass
+try:
+    client.create_payload_index(collection_name=collection_knowledge, field_name="metadata.type", field_schema=PayloadSchemaType.KEYWORD)
 except Exception:
     pass
 try:
@@ -90,23 +95,26 @@ def add_document(client_id: str, text: str, doc_type: str = "generico"):
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
     metadatas = [{"client_id": client_id_clean, "type": doc_type} for _ in chunks]
-    added_ids = vectorstore.add_texts(texts=chunks, metadatas=metadatas)
+    vectorstore.add_texts(texts=chunks, metadatas=metadatas)
     return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Categoria: {doc_type})."
 
 def get_memory_summary(client_id: str):
     client_id_clean = _clean_id(client_id)
     try:
+        # CORREZIONE: Cerchiamo dentro "metadata.client_id"
         records, _ = client.scroll(
             collection_name=collection_knowledge,
             limit=10000,
             with_payload=True,
             with_vectors=False,
-            scroll_filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
+            scroll_filter=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))])
         )
         
         summary = {}
         for record in records:
-            doc_type = record.payload.get("type", "generico")
+            # I metadati sono dentro la chiave 'metadata'
+            meta = record.payload.get("metadata", {})
+            doc_type = meta.get("type", "generico")
             summary[doc_type] = summary.get(doc_type, 0) + 1
             
         if not summary:
@@ -114,9 +122,8 @@ def get_memory_summary(client_id: str):
             debug_info = []
             for r in debug_records:
                 debug_info.append(f"ID: {r.id} | Payload: {str(r.payload)}")
-            
             summary["_DEBUG_SONDA"] = "ULTIMI 5 RECORD NEL DB: \n" + "\n".join(debug_info)
-            summary["_DEBUG_ID_CERCATO"] = f"Stavo cercando client_id = '{client_id_clean}'"
+            summary["_DEBUG_ID_CERCATO"] = f"Stavo cercando metadata.client_id = '{client_id_clean}'"
             
         return summary
     except Exception as e:
@@ -125,12 +132,13 @@ def get_memory_summary(client_id: str):
 def delete_category(client_id: str, doc_type: str):
     client_id_clean = _clean_id(client_id)
     try:
+        # CORREZIONE: Filtri annidati corretti
         client.delete(
             collection_name=collection_knowledge,
             points_selector=Filter(
                 must=[
-                    FieldCondition(key="client_id", match=MatchValue(value=client_id_clean)),
-                    FieldCondition(key="type", match=MatchValue(value=doc_type))
+                    FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean)),
+                    FieldCondition(key="metadata.type", match=MatchValue(value=doc_type))
                 ]
             )
         )
@@ -140,7 +148,11 @@ def delete_category(client_id: str, doc_type: str):
 
 def get_client_context(client_id: str, query: str, k: int = 8):
     client_id_clean = _clean_id(client_id)
-    docs = vectorstore.similarity_search(query, k=k, filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))]))
+    # CORREZIONE: Filtro annidato corretto
+    docs = vectorstore.similarity_search(
+        query, k=k, 
+        filter=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))])
+    )
     if not docs:
         return "Nessuna informazione trovata."
     return "\n\n---\n\n".join([f"[{doc.metadata.get('type', 'generico')}] {doc.page_content}" for doc in docs])
@@ -165,7 +177,8 @@ def save_and_teach(client_id: str, original_text: str, modified_text: str):
 def delete_client(client_id: str):
     client_id_clean = _clean_id(client_id)
     try:
-        client.delete(collection_name=collection_knowledge, points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))]))
+        # CORREZIONE: Filtro annidato corretto
+        client.delete(collection_name=collection_knowledge, points_selector=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))]))
         client.delete(collection_name=collection_registry, points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))]))
         return True, "Eliminato"
     except Exception as e:
