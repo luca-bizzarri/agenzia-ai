@@ -11,7 +11,6 @@ st.markdown("""
     <style>
     .main-header {font-size: 2.2rem; font-weight: bold; color: #1E88E5; margin-bottom: 0.5rem;}
     .sub-header {font-size: 1.1rem; color: #555; margin-bottom: 1.5rem;}
-    .delete-zone {border: 2px solid #ff4b4b; padding: 15px; border-radius: 8px; background-color: #fff0f0; margin-top: 20px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -20,7 +19,7 @@ st.markdown("""
 # ==========================================
 st.sidebar.title("🏢 Agenzia AI Hub")
 
-# 1. Recupera lista clienti dal database
+# 1. Recupera lista clienti dal database (ora con la funzione blindata)
 all_clients = rag.get_all_clients()
 
 # 2. Menu a tendina per scegliere o creare
@@ -47,9 +46,13 @@ if selected_option == "➕ CREA NUOVO CLIENTE...":
             st.sidebar.warning(f"Il cliente '{new_client_id}' esiste già. Selezionalo dal menu.")
         else:
             with st.sidebar.spinner(f"Creazione cliente '{new_client_id}' in corso..."):
-                rag.add_document(new_client_id, f"Cliente {new_client_id} inizializzato.", doc_type="sistema")
+                # Salviamo un documento "sistema" per registrare il cliente
+                rag.add_document(new_client_id, f"Cliente {new_client_id} inizializzato nel sistema.", doc_type="sistema")
+                
                 st.sidebar.success(f"✅ Cliente '{new_client_id}' creato con successo!")
-                st.sidebar.info("La pagina si ricaricherà tra un istante...")
+                st.sidebar.info("Aggiornamento della lista in corso...")
+                
+                # Piccola pausa per assicurare che Qdrant abbia indicizzato il dato
                 time.sleep(1.5)
                 st.rerun()
 
@@ -111,7 +114,7 @@ if task_type == "🧠 Carica Documenti/Link Cliente":
     with col1:
         doc_text = st.text_area("Incolla qui testo da Brand Book, Link, Note call o vecchi copy di esempio:", height=300, key="doc_text_area")
     with col2:
-        doc_type = st.selectbox("Tipo di documento", ["brand_book", "vecchi_copy", "note_call", "link_referenza", "regole_negative"])
+        doc_type = st.selectbox("Tipo di documento", ["brand_book", "vecchi_copy", "note_call", "link_referenza", "regole_negative", "sistema"])
         st.info("💡 Consiglio: Incolla 2-3 esempi di copy che il cliente ama. L'AI imparerà lo stile.")
     
     if st.button("💾 Salva nella Memoria", type="primary"):
