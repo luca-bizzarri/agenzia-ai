@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 import io
+import time
 import rag_engine as rag
 
 st.set_page_config(page_title="Agenzia AI Hub", layout="wide", page_icon="🚀")
 
-# --- STILE CSS ---
+# --- STILE CSS PERSONALIZZATO ---
 st.markdown("""
     <style>
     .main-header {font-size: 2.2rem; font-weight: bold; color: #1E88E5; margin-bottom: 0.5rem;}
@@ -14,63 +15,82 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR: GESTIONE CLIENTI ---
+# ==========================================
+# SIDEBAR: GESTIONE CLIENTI
+# ==========================================
 st.sidebar.title("🏢 Agenzia AI Hub")
 
 # 1. Recupera lista clienti dal database
 all_clients = rag.get_all_clients()
-client_options = ["➕ CREA NUOVO CLIENTE..."] + all_clients
 
 # 2. Menu a tendina per scegliere o creare
-selected_option = st.sidebar.selectbox("👤 Seleziona o Crea Cliente", client_options)
+client_options = ["➕ CREA NUOVO CLIENTE..."] + all_clients
+selected_option = st.sidebar.selectbox("👤 Seleziona Cliente", client_options, key="client_selector")
 
 client_id = ""
 
+# 3. Logica di creazione nuovo cliente
 if selected_option == "➕ CREA NUOVO CLIENTE...":
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### Nuovo Cliente")
-    new_client_id = st.sidebar.text_input("ID Cliente (es. nike, mario_rossi)", key="new_id_input").lower().strip().replace(" ", "_")
+    st.sidebar.markdown("### 🆕 Nuovo Cliente")
     
-    if st.sidebar.button("✅ Crea Cliente", type="primary"):
-        if new_client_id and new_client_id not in all_clients:
-            # Creiamo un documento iniziale per registrare il cliente nel DB
-            rag.add_document(new_client_id, f"Cliente {new_client_id} creato.", doc_type="sistema")
-            st.sidebar.success(f"Cliente '{new_client_id}' creato!")
-            st.rerun() # Ricarica la pagina per mostrare il nuovo cliente nel menu
+    new_client_id = st.sidebar.text_input(
+        "ID Cliente (es. nike, mario_rossi)", 
+        key="new_client_input",
+        help="Usa solo lettere minuscole, numeri e trattini bassi"
+    ).lower().strip().replace(" ", "_")
+    
+    if st.sidebar.button("✅ CREA CLIENTE", type="primary", use_container_width=True):
+        if not new_client_id:
+            st.sidebar.error("⚠️ Inserisci un ID per il cliente")
         elif new_client_id in all_clients:
-            st.sidebar.warning("Questo cliente esiste già. Selezionalo dal menu.")
+            st.sidebar.warning(f"Il cliente '{new_client_id}' esiste già. Selezionalo dal menu.")
         else:
-            st.sidebar.error("Inserisci un ID valido (solo lettere, numeri e trattini bassi).")
+            with st.sidebar.spinner(f"Creazione cliente '{new_client_id}' in corso..."):
+                rag.add_document(new_client_id, f"Cliente {new_client_id} inizializzato.", doc_type="sistema")
+                st.sidebar.success(f"✅ Cliente '{new_client_id}' creato con successo!")
+                st.sidebar.info("La pagina si ricaricherà tra un istante...")
+                time.sleep(1.5)
+                st.rerun()
+
 else:
+    # Cliente esistente selezionato
     client_id = selected_option
     st.sidebar.markdown("---")
-    st.sidebar.info(f"🟢 Memoria attiva per: **{client_id}**")
+    st.sidebar.success(f"🟢 Cliente attivo: **{client_id}**")
 
-# --- ZONA ELIMINAZIONE SICURA (Solo se un cliente è selezionato) ---
+# 4. Zona eliminazione sicura (visibile solo se un cliente è selezionato)
 if client_id:
     st.sidebar.markdown("---")
-    with st.sidebar.expander("⚠️ Zona Pericolosa: Elimina Cliente"):
-        st.warning(f"Stai per eliminare **TUTTI** i dati, i link e le regole di '{client_id}'. Questa azione è irreversibile.")
-        confirm_text = st.text_input(f"Per confermare, scrivi esattamente: {client_id}")
+    with st.sidebar.expander("⚠️ Elimina Cliente"):
+        st.warning(f"Stai per eliminare **TUTTI** i dati di '{client_id}'. Azione irreversibile.")
+        confirm_text = st.text_input(
+            f"Per confermare, scrivi esattamente: {client_id}", 
+            key="delete_confirm"
+        )
         
-        if st.button(f"🗑️ ELIMINA DEFINITIVAMENTE '{client_id}'", type="secondary"):
+        if st.button(f"🗑️ ELIMINA '{client_id}'", type="secondary", use_container_width=True):
             if confirm_text.strip().lower() == client_id:
                 with st.spinner("Eliminazione in corso..."):
                     success = rag.delete_client(client_id)
                     if success:
-                        st.success("Cliente eliminato con successo.")
-                        st.rerun() # Ricarica per aggiornare il menu a tendina
+                        st.success(f"✅ Cliente '{client_id}' eliminato definitivamente.")
+                        time.sleep(1.5)
+                        st.rerun()
                     else:
-                        st.error("Errore durante l'eliminazione.")
+                        st.error("❌ Errore durante l'eliminazione.")
             else:
-                st.error("Il testo inserito non corrisponde all'ID del cliente. Eliminazione bloccata per sicurezza.")
+                st.error("❌ Testo di conferma errato. Eliminazione bloccata per sicurezza.")
 
-# --- MAIN AREA ---
+# 5. Blocco se nessun cliente è selezionato
 if not client_id:
     st.markdown('<div class="main-header">Benvenuto in Agenzia AI Hub</div>', unsafe_allow_html=True)
     st.info("👈 Seleziona un cliente dal menu a sinistra o creane uno nuovo per iniziare.")
     st.stop()
 
+# ==========================================
+# MAIN AREA
+# ==========================================
 st.markdown(f'<div class="main-header">Dashboard: {client_id}</div>', unsafe_allow_html=True)
 
 task_type = st.radio("🤖 Scegli l'Agente", [
@@ -155,6 +175,7 @@ Rispondi SOLO con il CSV, includendo l'intestazione delle colonne come prima rig
                 st.code(response)
                 st.session_state['original_pe'] = response
 
+    # Sezione Salva e Insegna
     if 'current_pe_df' in st.session_state:
         st.markdown("---")
         st.markdown("### 🧠 Revisione e Apprendimento (Opzione B)")
