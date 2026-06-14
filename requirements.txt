@@ -1,8 +1,10 @@
 streamlit
 langchain
 langchain-openai
+langchain-huggingface
 langchain-qdrant
 qdrant-client
 python-dotenv
 sentence-transformers
 pandas
+requests
