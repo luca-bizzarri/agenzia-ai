@@ -5,7 +5,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.prompts import PromptTemplate
 from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams, Filter, FieldCondition, MatchValue, PointStruct
+from qdrant_client.http.models import Distance, VectorParams, Filter, FieldCondition, MatchValue, PointStruct, PayloadSchemaType
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import uuid
 
@@ -35,6 +35,7 @@ embeddings = OpenAIEmbeddings(
 collection_knowledge = "agenzia_knowledge"
 collection_registry = "client_registry"
 
+# Crea collezione conoscenza
 try:
     client.create_collection(
         collection_name=collection_knowledge,
@@ -43,6 +44,7 @@ try:
 except Exception:
     pass
 
+# Crea collezione registro
 try:
     client.create_collection(
         collection_name=collection_registry,
@@ -50,6 +52,28 @@ try:
     )
 except Exception:
     pass
+
+# ==========================================
+# CORREZIONE CRUCIALE: CREA INDICE SUL PAYLOAD
+# ==========================================
+# Questo dice a Qdrant che "client_id" è una stringa e può essere filtrata
+try:
+    client.create_payload_index(
+        collection_name=collection_knowledge,
+        field_name="client_id",
+        field_schema=PayloadSchemaType.KEYWORD
+    )
+except Exception:
+    pass # L'indice esiste già
+
+try:
+    client.create_payload_index(
+        collection_name=collection_registry,
+        field_name="client_id",
+        field_schema=PayloadSchemaType.KEYWORD
+    )
+except Exception:
+    pass # L'indice esiste già
 
 vectorstore = Qdrant(
     client=client,
@@ -155,7 +179,7 @@ def save_and_teach(client_id: str, original_text: str, modified_text: str):
     return f"🧠 Regola appresa e salvata per '{client_id}':\n\n{rule_extracted}"
 
 def delete_client(client_id: str):
-    """ELIMINA COMPLETAMENTE un cliente. Restituisce (True/False, Messaggio di errore o successo)"""
+    """ELIMINA COMPLETAMENTE un cliente. Restituisce (True/False, Messaggio)"""
     client_id_clean = _clean_id(client_id)
     try:
         # 1. Elimina dalla knowledge base
@@ -170,5 +194,4 @@ def delete_client(client_id: str):
         )
         return True, "Eliminato con successo"
     except Exception as e:
-        # QUI CATTURIAMO L'ERRORE REALE E LO RESTITUIAMO ALL'APP
         return False, str(e)
