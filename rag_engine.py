@@ -84,24 +84,22 @@ def register_client(client_id: str):
 
 def add_document(client_id: str, text: str, doc_type: str = "generico"):
     client_id_clean = _clean_id(client_id)
-    if not text or not text.strip():
-        return "⚠️ Testo vuoto."
+    if not text or len(text.strip()) < 50:
+        return "⚠️ Il testo è troppo breve o vuoto per essere salvato."
+    
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
     metadatas = [{"client_id": client_id_clean, "type": doc_type} for _ in chunks]
     vectorstore.add_texts(texts=chunks, metadatas=metadatas)
     return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Categoria: {doc_type})."
 
-# ==========================================
-# NUOVE FUNZIONI PER GESTIONE MEMORIA
-# ==========================================
 def get_memory_summary(client_id: str):
     """Restituisce un dizionario con il numero di blocchi per ogni categoria del cliente."""
     client_id_clean = _clean_id(client_id)
     try:
         records, _ = client.scroll(
             collection_name=collection_knowledge,
-            limit=2000,
+            limit=5000,
             with_payload=True,
             with_vectors=False,
             scroll_filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
@@ -111,11 +109,10 @@ def get_memory_summary(client_id: str):
             doc_type = record.payload.get("type", "generico")
             summary[doc_type] = summary.get(doc_type, 0) + 1
         return summary
-    except Exception:
-        return {}
+    except Exception as e:
+        return {"errore": str(e)}
 
 def delete_category(client_id: str, doc_type: str):
-    """Elimina tutti i blocchi di una specifica categoria per un cliente."""
     client_id_clean = _clean_id(client_id)
     try:
         client.delete(
@@ -130,7 +127,6 @@ def delete_category(client_id: str, doc_type: str):
         return True, f"✅ Categoria '{doc_type}' eliminata con successo."
     except Exception as e:
         return False, f"❌ Errore: {str(e)}"
-# ==========================================
 
 def get_client_context(client_id: str, query: str, k: int = 8):
     client_id_clean = _clean_id(client_id)

@@ -82,11 +82,10 @@ st.markdown("---")
 if task_type == "🧠 Carica e Gestisci Memoria":
     st.markdown('<div class="sub-header">Alimenta o modifica la memoria strategica del cliente</div>', unsafe_allow_html=True)
     
-    # --- SEZIONE 1: VISUALIZZA E GESTISCI MEMORIA ESISTENTE ---
+    # --- SEZIONE 1: VISUALIZZA MEMORIA ESISTENTE ---
     st.markdown("### 📂 Memoria Attuale")
     memory_summary = rag.get_memory_summary(client_id)
     
-    # Mappatura inversa per mostrare i nomi belli
     reverse_mapping = {
         "brand_book": "📘 Brand Book / Linee Guida",
         "icp_personas": "👤 ICP / Personas & Pain/Gain",
@@ -97,19 +96,21 @@ if task_type == "🧠 Carica e Gestisci Memoria":
         "regole_negative": "🚫 Regole Negative",
         "report_dati": "📊 Report / Dati Precedenti",
         "sistema": "⚙️ Sistema",
-        "regola_stile": "🧠 Regole Apprese (Opzione B)"
+        "regola_stile": "🧠 Regole Apprese (Opzione B)",
+        "errore": "⚠️ Errore di Lettura DB"
     }
     
-    if not memory_summary:
+    if not memory_summary or (len(memory_summary) == 1 and "errore" in memory_summary):
         st.info("La memoria di questo cliente è vuota. Carica il primo documento qui sotto!")
+        if "errore" in memory_summary:
+            st.error(f"Dettaglio errore DB: {memory_summary['errore']}")
     else:
         st.write("Clicca su 🗑️ per eliminare una categoria specifica e ricaricarla aggiornata.")
         for doc_type, count in memory_summary.items():
             display_name = reverse_mapping.get(doc_type, f"📁 {doc_type}")
-            
             col_chk1, col_chk2 = st.columns([3, 1])
             with col_chk1:
-                st.markdown(f"<div class='memory-item'><b>{display_name}</b> <span style='color:#666'>({count} blocchi di testo)</span></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='memory-item'><b>{display_name}</b> <span style='color:#666'>({count} blocchi)</span></div>", unsafe_allow_html=True)
             with col_chk2:
                 if st.button(f"🗑️ Elimina", key=f"del_{doc_type}", type="secondary", use_container_width=True):
                     with st.spinner(f"Eliminazione di {display_name} in corso..."):
@@ -122,12 +123,12 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                             st.error(msg)
         st.markdown("---")
 
-    # --- SEZIONE 2: CARICAMENTO NUOVI DATI ---
+    # --- SEZIONE 2: CARICAMENTO NUOVI DATI CON DEBUG ---
     st.markdown("### ➕ Aggiungi Nuovo Contenuto")
     col1, col2 = st.columns([2, 1])
     with col1:
         uploaded_files = st.file_uploader("📎 Carica uno o più file (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"], accept_multiple_files=True)
-        manual_text = st.text_area("Oppure incolla qui del testo manuale:", height=200)
+        manual_text = st.text_area("Oppure incolla qui del testo manuale:", height=150)
     
     with col2:
         st.markdown("**🏷️ Categoria:**")
@@ -147,17 +148,16 @@ if task_type == "🧠 Carica e Gestisci Memoria":
         if "➕" in selected_cat:
             doc_type = st.text_input("Nome categoria (es. 'promo_natale')", key="custom_cat").strip().lower().replace(" ", "_")
         else:
-            mapping = {v: k for k, v in reverse_mapping.items() if k != "sistema" and k != "regola_stile"}
-            # Fallback per sicurezza
-            mapping["📘 Brand Book / Linee Guida"] = "brand_book"
-            mapping["👤 ICP / Personas & Pain/Gain"] = "icp_personas"
-            mapping["🛡️ Gestione Obiezioni"] = "gestione_obiezioni"
-            mapping["✍️ Esempi di Copy Approvati"] = "esempi_copy"
-            mapping["📝 Istruzioni Specifiche di Creazione"] = "istruzioni_creazione"
-            mapping["📞 Note da Call / Briefing"] = "note_call"
-            mapping["🚫 Regole Negative"] = "regole_negative"
-            mapping["📊 Report / Dati Precedenti"] = "report_dati"
-            
+            mapping = {
+                "📘 Brand Book / Linee Guida": "brand_book",
+                "👤 ICP / Personas & Pain/Gain": "icp_personas",
+                "🛡️ Gestione Obiezioni": "gestione_obiezioni",
+                "✍️ Esempi di Copy Approvati": "esempi_copy",
+                "📝 Istruzioni Specifiche di Creazione": "istruzioni_creazione",
+                "📞 Note da Call / Briefing": "note_call",
+                "🚫 Regole Negative": "regole_negative",
+                "📊 Report / Dati Precedenti": "report_dati"
+            }
             doc_type = mapping.get(selected_cat, "generico")
             
         st.info(f"Salverai come: **`{doc_type}`**")
@@ -165,37 +165,55 @@ if task_type == "🧠 Carica e Gestisci Memoria":
     if st.button("💾 Salva nella Memoria", type="primary"):
         final_text = ""
         files_processed = 0
+        debug_info = []
         
         if uploaded_files:
             for uploaded_file in uploaded_files:
                 try:
+                    extracted = ""
                     if uploaded_file.type == "text/plain":
-                        final_text += f"\n\n--- FILE: {uploaded_file.name} ---\n" + uploaded_file.read().decode("utf-8")
+                        extracted = uploaded_file.read().decode("utf-8")
                     elif uploaded_file.type == "application/pdf":
-                        final_text += f"\n\n--- FILE: {uploaded_file.name} ---\n"
                         reader = PyPDF2.PdfReader(uploaded_file)
-                        final_text += "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+                        extracted = "\n".join([page.extract_text() or "" for page in reader.pages])
                     elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                        final_text += f"\n\n--- FILE: {uploaded_file.name} ---\n"
                         doc = docx.Document(uploaded_file)
-                        final_text += "\n".join([para.text for para in doc.paragraphs])
-                    files_processed += 1
+                        extracted = "\n".join([para.text for para in doc.paragraphs])
+                    
+                    char_count = len(extracted.strip())
+                    debug_info.append(f"📄 **{uploaded_file.name}**: {char_count} caratteri estratti.")
+                    
+                    if char_count > 0:
+                        final_text += f"\n\n--- FILE: {uploaded_file.name} ---\n" + extracted
+                        files_processed += 1
+                    else:
+                        debug_info.append(f"⚠️ **{uploaded_file.name}**: 0 caratteri (Forse è un PDF scansionato/immagine?).")
+                        
                 except Exception as e:
-                    st.error(f"❌ Errore lettura '{uploaded_file.name}': {e}")
+                    debug_info.append(f"❌ **{uploaded_file.name}**: Errore ({str(e)})")
         
         if manual_text.strip():
             final_text += "\n\n--- TESTO MANUALE ---\n" + manual_text.strip()
+            debug_info.append(f"📝 **Testo Manuale**: {len(manual_text.strip())} caratteri.")
             
         final_text = final_text.strip()
         
-        if final_text:
+        # PANNELLO DI DEBUG VISIVO
+        with st.expander("🔍 Pannello di Debug (Clicca per vedere cosa ha letto il sistema)"):
+            for info in debug_info:
+                st.write(info)
+            st.write(f"**Totale testo finale da salvare:** {len(final_text)} caratteri.")
+
+        if final_text and len(final_text) >= 50:
             with st.spinner(f"Elaborazione di {files_processed} file in corso..."):
                 result = rag.add_document(client_id, final_text, doc_type)
                 st.success(result)
-                time.sleep(1)
-                st.rerun() # Ricarica per mostrare subito la nuova memoria
+                time.sleep(1.5)
+                st.rerun()
+        elif final_text and len(final_text) < 50:
+            st.warning("⚠️ Il testo estratto è troppo breve (meno di 50 caratteri) per creare un blocco di memoria valido.")
         else:
-            st.warning("⚠️ Carica almeno un file o incolla del testo.")
+            st.warning("⚠️ Nessun testo valido trovato. Controlla il Pannello di Debug qui sopra.")
 
 # ==========================================
 # AGENTE 2: PIANO EDITORIALE
