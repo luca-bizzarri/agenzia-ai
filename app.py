@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 import time
+import json
 import rag_engine as rag
 import PyPDF2
 import docx
@@ -13,7 +14,6 @@ import tempfile
 import os
 
 st.set_page_config(page_title="Agenzia AI Hub", layout="wide", page_icon="🚀")
-
 st.markdown("""
     <style>
     .main-header {font-size: 2.2rem; font-weight: bold; color: #1E88E5; margin-bottom: 0.5rem;}
@@ -123,6 +123,14 @@ if task_type == "🧠 Carica e Gestisci Memoria":
     with col1:
         uploaded_files = st.file_uploader("📎 Carica file (PDF, DOCX, TXT, CSV)", type=["pdf", "docx", "txt", "csv"], accept_multiple_files=True)
         manual_text = st.text_area("Oppure incolla testo manuale:", height=150)
+        url_input = st.text_input("🌐 Incolla URL da scansionare (uno alla volta)", placeholder="https://...")
+        if st.button("🌐 Scansiona e Salva Link", type="secondary"):
+            if url_input.strip():
+                with st.spinner(f"Scansione di {url_input} in corso..."):
+                    success, msg = rag.scrape_and_save_url(client_id, url_input.strip(), doc_type="link_riferimento")
+                    if success: st.success(msg); time.sleep(1.5); st.rerun()
+                    else: st.error(msg)
+            else: st.warning("Inserisci un URL valido.")
     with col2:
         standard_categories = ["📘 Brand Book / Linee Guida", "👤 ICP / Personas & Pain/Gain", "🛡️ Gestione Obiezioni", "✍️ Esempi di Copy Approvati", "📝 Istruzioni Specifiche di Creazione", "📞 Note da Call / Briefing", "🚫 Regole Negative", "📊 Report / Dati Precedenti", "🔗 Link Asset, Competitor e Fonti", "➕ Scrivi una categoria personalizzata..."]
         selected_cat = st.selectbox("Scegli", standard_categories, key="cat_select")
@@ -148,19 +156,18 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                         doc = docx.Document(uploaded_file)
                         extracted = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
                     if len(extracted.strip()) > 0:
-                        rag.add_document(client_id, extracted, doc_type, source_file=uploaded_file.name)
-                        debug_info.append(f"✅ {uploaded_file.name}: {len(extracted)} caratteri")
+                        ok, msg = rag.add_document(client_id, extracted, doc_type, source_file=uploaded_file.name)
+                        debug_info.append(msg)
                 except Exception as e: debug_info.append(f"❌ {uploaded_file.name}: {str(e)}")
         if manual_text.strip():
-            rag.add_document(client_id, manual_text.strip(), doc_type, source_file="testo_manuale")
-            debug_info.append(f"✅ Testo manuale: {len(manual_text.strip())} caratteri")
+            ok, msg = rag.add_document(client_id, manual_text.strip(), doc_type, source_file="testo_manuale")
+            debug_info.append(msg)
         if debug_info:
             st.markdown(f'<div class="debug-box">' + "\n".join(debug_info) + "</div>", unsafe_allow_html=True)
-            st.success("✅ Salvataggio completato!")
             time.sleep(1.5); st.rerun()
 
 elif task_type == "📅 Piano Editoriale Completo":
-    st.markdown('<div class="sub-header">Componi il tuo piano editoriale su misura</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Generazione professionale: 3 contenuti alla volta, copy profondi e strutturati</div>', unsafe_allow_html=True)
     col1, col2, col3 = st.columns(3)
     with col1: mese = st.text_input("📅 Periodo", "Gennaio 2025")
     with col2: obiettivo = st.selectbox("🎯 Obiettivo", ["Brand Awareness", "Lead Generation", "Lancio Prodotto", "Fidelizzazione", "Engagement"])
@@ -178,154 +185,77 @@ elif task_type == "📅 Piano Editoriale Completo":
             quant = st.slider(f"**{label}**", 0, 20, 0, key=f"slider_{canale}")
             if quant > 0: canali_config[canale] = quant
 
-    st.markdown("---")
-    st.markdown("### 🎙️ 3. Contenuti Long-Form")
-    longform_config = {}
-    longform_disponibili = {"Blog_Article": "Articoli Blog", "Podcast_Episode": "Episodi Podcast", "Newsletter": "Newsletter", "Video_YouTube": "Video YouTube"}
-    cols_lf = st.columns(2)
-    for idx, (tipo, label) in enumerate(longform_disponibili.items()):
-        with cols_lf[idx % 2]:
-            quant = st.slider(f"**{label}**", 0, 10, 0, key=f"slider_lf_{tipo}")
-            if quant > 0: longform_config[tipo] = quant
-
-    totale = sum(canali_config.values()) + sum(longform_config.values())
+    totale = sum(canali_config.values())
     if totale == 0:
         st.warning("⚠️ Configura almeno un contenuto per generare il piano.")
     else:
-        st.success(f"🎯 Piano configurato: {totale} contenuti totali")
-        if st.button(f"🚀 GENERA PIANO ({totale} contenuti)", type="primary", use_container_width=True):
-            with st.spinner("Recupero contesto e composizione del piano..."):
+        st.success(f"🎯 Piano configurato: {totale} contenuti totali (verranno generati in batch di 3 per garantire qualità)")
+        if st.button(f"🚀 GENERA PRIMI 3 CONTENUTI", type="primary", use_container_width=True):
+            with st.spinner("Recupero contesto e scrittura copy professionali..."):
                 context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce, link riferimento")
                 
                 with st.expander("🔍 Vedi cosa sta leggendo l'AI (Contesto Recuperato dai tuoi file)", expanded=False):
                     st.markdown(f'<div class="context-box">{context}</div>', unsafe_allow_html=True)
-                    st.caption("Se qui vedi il testo dei tuoi PDF/DOCX, l'AI lo userà come base. Se vedi 'Nessuna informazione', carica prima i file nella scheda Memoria.")
                 
-                canali_str = "\n".join([f"- {k}: {v} contenuti" for k, v in canali_config.items()])
-                longform_str = "\n".join([f"- {k}: {v} contenuti" for k, v in longform_config.items()]) if longform_config else "Nessuno"
+                canali_list = list(canali_config.keys())[:3] # Prende i primi 3 configurati per il batch
                 
                 prompt_pe = (
-                    f"Sei un Content Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT usando il PUNTO E VIRGOLA (;) come separatore.\n\n"
-                    f"## CONTESTO CLIENTE (USA QUESTO COME BASE ASSOLUTA):\n{context}\n\n"
-                    f"## CONFIGURAZIONE:\nPeriodo: {mese} | Durata: {durata} | Obiettivo: {obiettivo} | TEMA CENTRALE OBBLIGATORIO: {tema} | Note: {istruzioni_extra}\n"
-                    f"Social:\n{canali_str}\nLong-form:\n{longform_str}\n\n"
-                    f"## COLONNE CSV OBBLIGATORIE (separate da ; ):\nTipo;Data;Titolo/Tema;Hook;Copy/Script;CTA;Brief_Visivo;Hashtag_SEO;Note\n\n"
-                    f"## ISTRUZIONI DI COMPILAZIONE CRITICHE E VINCOLANTI:\n"
-                    f"1. **ALLINEAMENTO AL TEMA CENTRALE**: OGNI singolo contenuto (titolo, hook, copy) DEVE ruotare attorno al tema '{tema}'. È vietato generare contenuti che non siano direttamente collegati a questo tema.\n"
-                    f"2. **COPY COMPLETI E LUNGHI**: I copy NON devono essere brevi. Devono essere post COMPLETI, pronti per la pubblicazione.\n"
-                    f"   - Per LinkedIn: MINIMO 150-250 parole, con struttura articolata, emoji professionali e paragrafi.\n"
-                    f"   - Per Instagram: MINIMO 80-150 parole, con emoji e call-to-action chiara.\n"
-                    f"   - Per Blog/Newsletter: MINIMO 400-600 parole, con struttura completa.\n"
-                    f"3. **VIETATO**: Usare placeholder come '[Inserisci testo]', 'Lorem ipsum', o frasi generiche di 2-3 righe. Scrivi il testo REALE e COMPLETO.\n"
-                    f"4. **Brief_Visivo**: Descrivi in dettaglio l'immagine/video (soggetto, colori, azione, mood).\n"
-                    f"5. Genera ESATTAMENTE il numero di contenuti richiesti. NON usare il punto e virgola all'interno dei testi. Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
+                    f"Sei un Senior Copywriter e Content Strategist. Genera ESATTAMENTE 3 contenuti in formato JSON STRICT.\n\n"
+                    f"## CONTESTO CLIENTE (BASE ASSOLUTA):\n{context}\n\n"
+                    f"## CONFIGURAZIONE:\nPeriodo: {mese} | Obiettivo: {obiettivo} | Tema Centrale: {tema} | Note: {istruzioni_extra}\n"
+                    f"Canali da usare in questo batch: {', '.join(canali_list)}\n\n"
+                    f"## FORMATO OUTPUT JSON:\n[{{\"tipo\": \"...\", \"data\": \"YYYY-MM-DD\", \"titolo\": \"...\", \"hook\": \"...\", \"copy\": \"...\", \"cta\": \"...\", \"brief_visivo\": \"...\", \"hashtag_seo\": \"...\", \"note\": \"...\"}}, ...]\n\n"
+                    f"## VINCOLI OBBLIGATORI:\n"
+                    f"1. **LUNGHEZZA COPY**: LinkedIn = 150-250 parole. Instagram = 80-150 parole. TikTok/Reel = Script di 150-300 caratteri. Vietato testi brevi di 1-2 righe.\n"
+                    f"2. **STRUTTURA COPY**: Intro (Hook) → 2-3 paragrafi di sviluppo (pain, soluzione, prova sociale) → CTA chiara. Usa a capo reali.\n"
+                    f"3. **ALLINEAMENTO TEMA**: Ogni contenuto deve ruotare ESPlicitamente attorno a: '{tema}'.\n"
+                    f"4. **VIETATO**: Placeholder, 'Lorem ipsum', frasi generiche, ripetizioni. Scrivi testi PRONTI ALLA PUBBLICAZIONE.\n"
+                    f"5. Rispondi SOLO con il JSON valido, senza markdown o testo extra."
                 )
                 response = rag.llm.invoke(prompt_pe).content
+                
                 try:
-                    clean_response = response.replace("```csv", "").replace("```", "").strip()
-                    df = pd.read_csv(io.StringIO(clean_response), sep=';')
-                    st.session_state['original_pe'] = clean_response
-                    st.session_state['current_pe_df'] = df
-                    st.success(f"✅ Piano generato con {len(df)} contenuti!")
+                    # Pulizia JSON
+                    clean_json = response.replace("```json", "").replace("```", "").strip()
+                    data_list = json.loads(clean_json)
+                    df = pd.DataFrame(data_list)
+                    st.session_state['ped_batch'] = df
+                    st.success("✅ 3 contenuti generati con successo! Copy profondi e strutturati.")
                     st.data_editor(df, num_rows="dynamic", key="editable_df", height=600, use_container_width=True)
                     
-                    # ==========================================
-                    # NUOVA GENERAZIONE DOCX STRUTTURATA (NO TABELLA)
-                    # ==========================================
+                    # DOCX Export
                     doc = docx.Document()
-                    
-                    # Intestazione
                     doc.add_heading(f'Piano Editoriale: {client_id}', 0)
-                    doc.add_paragraph(f'Periodo: {mese} | Obiettivo: {obiettivo} | Durata: {durata}')
-                    doc.add_paragraph(f'Tema Centrale: {tema}')
+                    doc.add_paragraph(f'Periodo: {mese} | Obiettivo: {obiettivo} | Tema: {tema}')
                     doc.add_paragraph('_' * 50)
-                    doc.add_paragraph(' ')
-                    
-                    # Itera sui contenuti e crea sezioni di testo
-                    for index, row in df.iterrows():
-                        # Titolo del contenuto
-                        title = str(row.get('Titolo/Tema', f'Contenuto {index + 1}'))
-                        doc.add_heading(f"{index + 1}. {title}", level=1)
-                        
-                        # Sottotitolo con Tipo e Data
-                        tipo = str(row.get('Tipo', 'N/A'))
-                        data = str(row.get('Data', 'N/A'))
-                        p_meta = doc.add_paragraph()
-                        runner = p_meta.add_run(f"📌 Tipo: {tipo}  |  📅 Data: {data}")
-                        runner.bold = True
-                        runner.font.color.rgb = docx.shared.RGBColor(100, 100, 100)
-                        
-                        # Hook
-                        if pd.notna(row.get('Hook')) and str(row.get('Hook')).strip():
-                            doc.add_paragraph("🎣 Hook:", style='Heading 3')
-                            doc.add_paragraph(str(row.get('Hook')))
-                        
-                        # Copy/Script (Gestisce i paragrafi separati da \n)
-                        if pd.notna(row.get('Copy/Script')) and str(row.get('Copy/Script')).strip():
-                            doc.add_paragraph("📝 Copy / Script:", style='Heading 3')
-                            copy_text = str(row.get('Copy/Script'))
-                            for paragraph in copy_text.split('\n'):
-                                if paragraph.strip():
-                                    doc.add_paragraph(paragraph.strip())
-                        
-                        # CTA
-                        if pd.notna(row.get('CTA')) and str(row.get('CTA')).strip():
-                            doc.add_paragraph("👉 Call to Action (CTA):", style='Heading 3')
-                            doc.add_paragraph(str(row.get('CTA')))
-                        
-                        # Brief Visivo
-                        if pd.notna(row.get('Brief_Visivo')) and str(row.get('Brief_Visivo')).strip():
-                            doc.add_paragraph("🎨 Brief Visivo:", style='Heading 3')
-                            doc.add_paragraph(str(row.get('Brief_Visivo')))
-                        
-                        # Hashtag e Note
-                        hashtags = str(row.get('Hashtag_SEO', '')).strip()
-                        notes = str(row.get('Note', '')).strip()
-                        if hashtags or notes:
-                            doc.add_paragraph(f"🏷️ Hashtag/SEO: {hashtags}  |  📌 Note: {notes}", style='Normal')
-                        
-                        # Linea divisoria tra un contenuto e l'altro
+                    for idx, row in df.iterrows():
+                        doc.add_heading(f"{idx + 1}. {row.get('titolo', 'Contenuto')}", level=1)
+                        doc.add_paragraph(f"📌 Tipo: {row.get('tipo')} | 📅 Data: {row.get('data')}", style='Normal')
+                        if row.get('hook'): doc.add_paragraph(f"🎣 Hook: {row['hook']}")
+                        if row.get('copy'): 
+                            doc.add_paragraph("📝 Copy:", style='Heading 3')
+                            for p in str(row['copy']).split('\n'): doc.add_paragraph(p.strip())
+                        if row.get('cta'): doc.add_paragraph(f"👉 CTA: {row['cta']}")
+                        if row.get('brief_visivo'): doc.add_paragraph(f"🎨 Brief: {row['brief_visivo']}")
                         doc.add_paragraph("__________________________________________________________________________________________")
-                        doc.add_paragraph(' ')
                     
-                    # Salva il documento in memoria
-                    docx_buffer = io.BytesIO()
-                    doc.save(docx_buffer)
-                    docx_buffer.seek(0)
-                    # ==========================================
+                    buf = io.BytesIO()
+                    doc.save(buf); buf.seek(0)
+                    st.download_button("📥 Scarica WORD", buf, f"PED_{client_id}_{mese.replace(' ','_')}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
                     
-                    col_dl1, col_dl2 = st.columns(2)
-                    with col_dl1:
-                        st.download_button(
-                            label="📥 Scarica Piano in WORD (DOCX)",
-                            data=docx_buffer,
-                            file_name=f"Piano_Editoriale_{client_id}_{mese.replace(' ', '_')}.docx",
-                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                            use_container_width=True
-                        )
-                    with col_dl2:
-                        csv_export = df.to_csv(index=False, sep=';').encode('utf-8')
-                        st.download_button(
-                            label="📥 Scarica Piano in CSV (Backup)",
-                            data=csv_export,
-                            file_name=f"Piano_Editoriale_{client_id}_{mese.replace(' ', '_')}.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-                        
                 except Exception as e:
-                    st.error("⚠️ Errore formato CSV. Output grezzo:"); st.code(response)
+                    st.error("⚠️ Errore parsing JSON. Output grezzo:"); st.code(response)
 
-    if 'current_pe_df' in st.session_state:
+    if 'ped_batch' in st.session_state:
         st.markdown("---")
         if st.button("💾 Salva e Insegna (Opzione B)", type="secondary"):
             with st.spinner("Analisi correzioni in corso..."):
-                result = rag.save_and_teach(client_id, st.session_state['original_pe'], st.session_state['editable_df'].to_csv(index=False, sep=';'))
+                result = rag.save_and_teach(client_id, json.dumps(st.session_state['ped_batch'].to_dict(orient='records')), st.session_state['editable_df'].to_json(orient='records'))
                 st.success(result)
 
 elif task_type == "📊 Report ADS Performance":
     st.markdown('<div class="sub-header">Genera report PDF professionale con analisi performance ADS</div>', unsafe_allow_html=True)
-    st.info("💡 **Istruzioni:** Scarica il report CSV da Meta Ads Manager o Google Ads. Assicurati che contenga colonne come: Campagna, Spesa, Impressioni, Click, CTR, CPA, ROAS/Conv. Value.")
+    st.info("💡 **Istruzioni:** Scarica il report CSV da Meta Ads Manager o Google Ads.")
     col1, col2 = st.columns([1, 2])
     with col1:
         st.markdown("### 1. Dati Campagna")
@@ -343,7 +273,6 @@ elif task_type == "📊 Report ADS Performance":
                 try:
                     df_report = pd.read_csv(uploaded_report)
                     df_report.columns = [col.strip().lower().replace(' ', '_') for col in df_report.columns]
-                    
                     spend_col = next((c for c in df_report.columns if 'spesa' in c or 'spend' in c or 'cost' in c), None)
                     impr_col = next((c for c in df_report.columns if 'impression' in c), None)
                     click_col = next((c for c in df_report.columns if 'click' in c and 'ctr' not in c), None)
@@ -463,7 +392,7 @@ elif task_type == "📊 Report ADS Performance":
 
 elif task_type == "📱 Report Social Organico":
     st.markdown('<div class="sub-header">Genera report PDF con analisi performance organica social</div>', unsafe_allow_html=True)
-    st.info("💡 **Istruzioni:** Carica un CSV con i dati dei post social (esportato da Meta Business Suite, LinkedIn Analytics, ecc.). Colonne tipiche: Data, Piattaforma, Tipo Contenuto, Testo/Copy, Like, Commenti, Condivisioni, Reach, Impressioni, Engagement Rate.")
+    st.info("💡 **Istruzioni:** Carica un CSV con i dati dei post social (esportato da Meta Business Suite, LinkedIn Analytics, ecc.).")
     col1, col2 = st.columns([1, 2])
     with col1:
         st.markdown("### 1. Dati Social")
@@ -481,7 +410,6 @@ elif task_type == "📱 Report Social Organico":
                 try:
                     df_social = pd.read_csv(uploaded_social)
                     df_social.columns = [col.strip().lower().replace(' ', '_') for col in df_social.columns]
-                    
                     platform_col = next((c for c in df_social.columns if 'piatt' in c or 'platform' in c), None)
                     content_type_col = next((c for c in df_social.columns if 'tipo' in c or 'type' in c), None)
                     likes_col = next((c for c in df_social.columns if 'like' in c or 'reaction' in c), None)
@@ -497,12 +425,9 @@ elif task_type == "📱 Report Social Organico":
                     total_reach = df_social[reach_col].sum() if reach_col else 0
                     avg_engagement = df_social[engagement_col].mean() if engagement_col else 0
                     
-                    if engagement_col:
-                        top_posts = df_social.nlargest(5, engagement_col)
-                    elif likes_col:
-                        top_posts = df_social.nlargest(5, likes_col)
-                    else:
-                        top_posts = df_social.head(5)
+                    if engagement_col: top_posts = df_social.nlargest(5, engagement_col)
+                    elif likes_col: top_posts = df_social.nlargest(5, likes_col)
+                    else: top_posts = df_social.head(5)
                     
                     social_sample = df_social.head(20).to_string()
                     prompt_social = (
@@ -593,8 +518,7 @@ elif task_type == "📱 Report Social Organico":
                     pdf.set_font("Arial", "", 8)
                     for _, post in top_posts.iterrows():
                         data_tipo = str(post.get('data', post.get('date', 'N/A')))[:10]
-                        if content_type_col:
-                            data_tipo += f" | {str(post.get(content_type_col, ''))[:15]}"
+                        if content_type_col: data_tipo += f" | {str(post.get(content_type_col, ''))[:15]}"
                         content_preview = str(post.get('testo', post.get('copy', post.get('content', 'N/A'))))[:40]
                         likes = f"{post.get(likes_col, 0):,.0f}" if likes_col else "N/A"
                         eng = f"{post.get(engagement_col, 0):.2f}%" if engagement_col else "N/A"
@@ -610,8 +534,7 @@ elif task_type == "📱 Report Social Organico":
                     pdf.set_font("Arial", "", 10)
                     for line in ai_analysis_social.split('\n'):
                         clean_line = line.replace('**', '').replace('*', '')
-                        if clean_line.strip():
-                            pdf.multi_cell(0, 6, clean_line)
+                        if clean_line.strip(): pdf.multi_cell(0, 6, clean_line)
                     
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
                         pdf.output(tmp.name)

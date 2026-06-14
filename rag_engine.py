@@ -8,6 +8,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, Filter, FieldCondition, MatchValue, PointStruct, PayloadSchemaType
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import uuid
+import trafilatura
 
 def get_key(key_name):
     return os.getenv(key_name) or st.secrets.get(key_name, "")
@@ -50,18 +51,11 @@ try:
 except Exception:
     pass
 
-try:
-    client.create_payload_index(collection_name=collection_knowledge, field_name="metadata.client_id", field_schema=PayloadSchemaType.KEYWORD)
-except Exception:
-    pass
-try:
-    client.create_payload_index(collection_name=collection_knowledge, field_name="metadata.type", field_schema=PayloadSchemaType.KEYWORD)
-except Exception:
-    pass
-try:
-    client.create_payload_index(collection_name=collection_knowledge, field_name="metadata.source", field_schema=PayloadSchemaType.KEYWORD)
-except Exception:
-    pass
+for field in ["metadata.client_id", "metadata.type", "metadata.source"]:
+    try:
+        client.create_payload_index(collection_name=collection_knowledge, field_name=field, field_schema=PayloadSchemaType.KEYWORD)
+    except Exception:
+        pass
 try:
     client.create_payload_index(collection_name=collection_registry, field_name="client_id", field_schema=PayloadSchemaType.KEYWORD)
 except Exception:
@@ -76,8 +70,7 @@ def _clean_id(client_id: str) -> str:
 def get_all_clients():
     try:
         records, _ = client.scroll(collection_name=collection_registry, limit=1000, with_payload=True, with_vectors=False)
-        clients = [record.payload.get("client_id") for record in records if record.payload and record.payload.get("client_id")]
-        return sorted(list(set(clients)))
+        return sorted(list(set([r.payload.get("client_id") for r in records if r.payload and r.payload.get("client_id")])))
     except Exception:
         return []
 
@@ -90,39 +83,45 @@ def register_client(client_id: str):
     except Exception:
         return False
 
+# FUNZIONE NUOVA: SCRAPES URL REALI E SALVA IN MEMORIA
+def scrape_and_save_url(client_id: str, url: str, doc_type: str = "link_riferimento"):
+    client_id_clean = _clean_id(client_id)
+    try:
+        downloaded = trafilatura.fetch_url(url)
+        text = trafilatura.extract(downloaded, output_format="txt") if downloaded else ""
+        if not text or len(text.strip()) < 100:
+            return False, f"⚠️ Link non leggibile o protetto: {url}"
+        
+        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
+        chunks = splitter.split_text(text)
+        metadatas = [{"client_id": client_id_clean, "type": doc_type, "source": f"🌐 {url}"} for _ in chunks]
+        vectorstore.add_texts(texts=chunks, metadatas=metadatas)
+        return True, f"✅ Scansionato e salvati {len(chunks)} blocchi da {url}"
+    except Exception as e:
+        return False, f"❌ Errore scraping {url}: {str(e)}"
+
 def add_document(client_id: str, text: str, doc_type: str = "generico", source_file: str = "manuale"):
     client_id_clean = _clean_id(client_id)
     if not text or len(text.strip()) < 50:
-        return "⚠️ Il testo è troppo breve o vuoto per essere salvato."
+        return False, "⚠️ Testo troppo breve."
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
     metadatas = [{"client_id": client_id_clean, "type": doc_type, "source": source_file} for _ in chunks]
     vectorstore.add_texts(texts=chunks, metadatas=metadatas)
-    return f"✅ Salvati {len(chunks)} blocchi (Fonte: {source_file})."
+    return True, f"✅ Salvati {len(chunks)} blocchi (Fonte: {source_file})"
 
 def get_memory_summary(client_id: str):
     client_id_clean = _clean_id(client_id)
     try:
-        records, _ = client.scroll(
-            collection_name=collection_knowledge, limit=10000, with_payload=True, with_vectors=False,
-            scroll_filter=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))])
-        )
+        records, _ = client.scroll(collection_name=collection_knowledge, limit=10000, with_payload=True, with_vectors=False, scroll_filter=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))]))
         summary = {}
-        for record in records:
-            meta = record.payload.get("metadata", {})
-            doc_type = meta.get("type", "generico")
-            source = meta.get("source", "sconosciuto")
-            if doc_type not in summary:
-                summary[doc_type] = {"count": 0, "files": set()}
-            summary[doc_type]["count"] += 1
-            if source not in ["manuale", "sconosciuto", "sistema"]:
-                summary[doc_type]["files"].add(source)
-            elif source == "manuale":
-                summary[doc_type]["files"].add("📝 Testo Manuale")
-            elif source == "sistema":
-                summary[doc_type]["files"].add("⚙️ Sistema")
-        for key in summary:
-            summary[key]["files"] = sorted(list(summary[key]["files"]))
+        for r in records:
+            meta = r.payload.get("metadata", {})
+            dt, src = meta.get("type", "generico"), meta.get("source", "sconosciuto")
+            if dt not in summary: summary[dt] = {"count": 0, "files": set()}
+            summary[dt]["count"] += 1
+            summary[dt]["files"].add(src)
+        for k in summary: summary[k]["files"] = sorted(list(summary[k]["files"]))
         return summary
     except Exception as e:
         return {"errore": str(e)}
@@ -130,11 +129,7 @@ def get_memory_summary(client_id: str):
 def delete_specific_file(client_id: str, doc_type: str, source_file: str):
     client_id_clean = _clean_id(client_id)
     try:
-        client.delete(collection_name=collection_knowledge, points_selector=Filter(must=[
-            FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean)),
-            FieldCondition(key="metadata.type", match=MatchValue(value=doc_type)),
-            FieldCondition(key="metadata.source", match=MatchValue(value=source_file))
-        ]))
+        client.delete(collection_name=collection_knowledge, points_selector=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean)), FieldCondition(key="metadata.type", match=MatchValue(value=doc_type)), FieldCondition(key="metadata.source", match=MatchValue(value=source_file))]))
         return True, f"✅ '{source_file}' eliminato."
     except Exception as e:
         return False, str(e)
@@ -142,62 +137,30 @@ def delete_specific_file(client_id: str, doc_type: str, source_file: str):
 def delete_category(client_id: str, doc_type: str):
     client_id_clean = _clean_id(client_id)
     try:
-        client.delete(collection_name=collection_knowledge, points_selector=Filter(must=[
-            FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean)),
-            FieldCondition(key="metadata.type", match=MatchValue(value=doc_type))
-        ]))
+        client.delete(collection_name=collection_knowledge, points_selector=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean)), FieldCondition(key="metadata.type", match=MatchValue(value=doc_type))]))
         return True, f"✅ Categoria '{doc_type}' eliminata."
     except Exception as e:
         return False, str(e)
 
-# ==============================================================================
-# FUNZIONE CRITICA: RICERCA CON TRACCIAMENTO FONTE VISIVO
-# ==============================================================================
-def get_client_context(client_id: str, query: str, k: int = 12): # Aumentato a 12 per pescare da più file
+def get_client_context(client_id: str, query: str, k: int = 12):
     client_id_clean = _clean_id(client_id)
     try:
-        # 1. Genera embedding della query direttamente
-        query_vector = embeddings.embed_query(query)
-        
-        # 2. Cerca DIRETTAMENTE con il client Qdrant usando query_points
-        search_result = client.query_points(
-            collection_name=collection_knowledge,
-            query=query_vector,
-            query_filter=Filter(
-                must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))]
-            ),
-            limit=k
-        ).points
-        
-        if not search_result:
-            return "Nessuna informazione specifica trovata per questo cliente nel database."
-        
-        # 3. Formatta i risultati MOSTRANDO ESPLICITAMENTE IL NOME DEL FILE
-        formatted_docs = []
-        for hit in search_result:
-            payload = hit.payload
-            metadata = payload.get("metadata", {})
-            doc_type = metadata.get("type", "generico")
-            source = metadata.get("source", "Sconosciuto")
-            page_content = payload.get("page_content", "")
-            
-            # AGGIUNTA CRUCIALE: Mostriamo la fonte tra parentesi quadre
-            formatted_docs.append(f"📄 **Fonte:** `{source}` | **Tipo:** `{doc_type}`\n> {page_content}")
-            
-        return "\n\n---\n\n".join(formatted_docs)
-        
+        qv = embeddings.embed_query(query)
+        hits = client.query_points(collection_name=collection_knowledge, query=qv, query_filter=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))]), limit=k).points
+        if not hits: return "Nessuna informazione trovata."
+        docs = []
+        for h in hits:
+            m = h.payload.get("metadata", {})
+            docs.append(f"📄 **Fonte:** `{m.get('source', 'N/A')}` | **Tipo:** `{m.get('type', 'N/A')}`\n> {h.payload.get('page_content', '')}")
+        return "\n\n---\n\n".join(docs)
     except Exception as e:
-        return f"Errore nel recupero del contesto: {str(e)}"
-# ==============================================================================
+        return f"Errore recupero: {str(e)}"
 
 def web_search(query: str, num_results: int = 3):
-    if not SERPER_API_KEY:
-        return "⚠️ Chiave SERPER_API_KEY non trovata."
+    if not SERPER_API_KEY: return "⚠️ SERPER_API_KEY mancante."
     try:
-        response = requests.post("https://google.serper.dev/search", json={"q": query, "num": num_results}, headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"})
-        if response.status_code == 200:
-            return "\n".join([f"- {r.get('title')}: {r.get('snippet')}" for r in response.json().get("organic", [])])
-        return f"Errore Serper: {response.status_code}"
+        r = requests.post("https://google.serper.dev/search", json={"q": query, "num": num_results}, headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"})
+        return "\n".join([f"- {x.get('title')}: {x.get('snippet')}" for x in r.json().get("organic", [])]) if r.status_code == 200 else f"Errore Serper: {r.status_code}"
     except Exception as e:
         return f"Errore: {str(e)}"
 
