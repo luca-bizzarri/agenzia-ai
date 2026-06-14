@@ -151,8 +151,7 @@ def delete_category(client_id: str, doc_type: str):
         return False, str(e)
 
 # ==============================================================================
-# FUNZIONE CRITICA: RICERCA DIRETTA QDRANT (NO LANGCHAIN WRAPPER)
-# Se vedi "vectorstore.similarity_search" qui sotto, NON hai incollato bene!
+# FUNZIONE CRITICA: RICERCA DIRETTA QDRANT (SINTASSI MODERNA AGGIORNATA)
 # ==============================================================================
 def get_client_context(client_id: str, query: str, k: int = 8):
     client_id_clean = _clean_id(client_id)
@@ -160,15 +159,15 @@ def get_client_context(client_id: str, query: str, k: int = 8):
         # 1. Genera embedding della query direttamente
         query_vector = embeddings.embed_query(query)
         
-        # 2. Cerca DIRETTAMENTE con il client Qdrant (bypassa LangChain)
-        search_result = client.search(
+        # 2. Cerca DIRETTAMENTE con il client Qdrant usando query_points (API moderna)
+        search_result = client.query_points(
             collection_name=collection_knowledge,
-            query_vector=query_vector,
+            query=query_vector,
             query_filter=Filter(
                 must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))]
             ),
             limit=k
-        )
+        ).points  # <-- .points estrae la lista effettiva dei risultati
         
         if not search_result:
             return "Nessuna informazione specifica trovata per questo cliente nel database."
