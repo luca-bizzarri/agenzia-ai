@@ -90,18 +90,12 @@ def add_document(client_id: str, text: str, doc_type: str = "generico"):
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
     metadatas = [{"client_id": client_id_clean, "type": doc_type} for _ in chunks]
-    
-    # Aggiungiamo i testi e catturiamo gli ID restituiti per debug
     added_ids = vectorstore.add_texts(texts=chunks, metadatas=metadatas)
-    return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Categoria: {doc_type}). IDs: {added_ids[:2]}..."
+    return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Categoria: {doc_type})."
 
-# ==========================================
-# SONDA DI DEBUG INFALLIBILE
-# ==========================================
 def get_memory_summary(client_id: str):
     client_id_clean = _clean_id(client_id)
     try:
-        # 1. Tentativo normale con filtro
         records, _ = client.scroll(
             collection_name=collection_knowledge,
             limit=10000,
@@ -115,18 +109,11 @@ def get_memory_summary(client_id: str):
             doc_type = record.payload.get("type", "generico")
             summary[doc_type] = summary.get(doc_type, 0) + 1
             
-        # 2. SONDA DI DEBUG: Se non trova nulla, leggiamo gli ultimi 5 record TOTALI del DB
         if not summary:
-            debug_records, _ = client.scroll(
-                collection_name=collection_knowledge,
-                limit=5,
-                with_payload=True,
-                with_vectors=False
-            )
+            debug_records, _ = client.scroll(collection_name=collection_knowledge, limit=5, with_payload=True, with_vectors=False)
             debug_info = []
             for r in debug_records:
-                payload_str = str(r.payload).replace("'", '"') # Formattazione per JSON
-                debug_info.append(f"ID: {r.id} | Payload: {payload_str}")
+                debug_info.append(f"ID: {r.id} | Payload: {str(r.payload)}")
             
             summary["_DEBUG_SONDA"] = "ULTIMI 5 RECORD NEL DB: \n" + "\n".join(debug_info)
             summary["_DEBUG_ID_CERCATO"] = f"Stavo cercando client_id = '{client_id_clean}'"
@@ -134,7 +121,6 @@ def get_memory_summary(client_id: str):
         return summary
     except Exception as e:
         return {"errore": str(e)}
-# ==========================================
 
 def delete_category(client_id: str, doc_type: str):
     client_id_clean = _clean_id(client_id)
