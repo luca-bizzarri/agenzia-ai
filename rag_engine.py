@@ -59,7 +59,7 @@ except Exception:
 vectorstore = Qdrant(
     client=client,
     collection_name=collection_knowledge,
-    embeddings=embeddings,  # <-- CONTROLLA CHE CI SIA LA 's' FINALE QUI
+    embeddings=embeddings,   # <<< MARCO_POLO_TEST_999 >>>
 )
 
 # 4. Modello LLM
