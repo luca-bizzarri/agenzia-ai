@@ -90,40 +90,47 @@ def add_document(client_id: str, text: str, doc_type: str = "generico"):
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
     metadatas = [{"client_id": client_id_clean, "type": doc_type} for _ in chunks]
-    vectorstore.add_texts(texts=chunks, metadatas=metadatas)
-    return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Categoria: {doc_type})."
+    
+    # Aggiungiamo i testi e catturiamo gli ID restituiti per debug
+    added_ids = vectorstore.add_texts(texts=chunks, metadatas=metadatas)
+    return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Categoria: {doc_type}). IDs: {added_ids[:2]}..."
 
 # ==========================================
-# FUNZIONE AGGIORNATA CON "RAW COUNT" (VERITÀ ASSOLUTA)
+# SONDA DI DEBUG INFALLIBILE
 # ==========================================
 def get_memory_summary(client_id: str):
     client_id_clean = _clean_id(client_id)
     try:
-        # 1. Chiediamo a Qdrant QUANTI elementi ci sono in totale per questo cliente (bypassa cache UI)
-        count_result = client.count(
-            collection_name=collection_knowledge,
-            count_filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))]),
-            exact=True
-        )
-        total_points = count_result.count
-        
-        if total_points == 0:
-            return {"avviso": f"Nessun dato trovato nel DB per '{client_id_clean}'."}
-
-        # 2. Se ci sono dati, leggiamo le categorie
+        # 1. Tentativo normale con filtro
         records, _ = client.scroll(
             collection_name=collection_knowledge,
-            limit=total_points + 100, # Prendiamo tutto senza limiti
+            limit=10000,
             with_payload=True,
             with_vectors=False,
             scroll_filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
         )
         
-        summary = {"_totale_punti_db": total_points}
+        summary = {}
         for record in records:
             doc_type = record.payload.get("type", "generico")
             summary[doc_type] = summary.get(doc_type, 0) + 1
-        
+            
+        # 2. SONDA DI DEBUG: Se non trova nulla, leggiamo gli ultimi 5 record TOTALI del DB
+        if not summary:
+            debug_records, _ = client.scroll(
+                collection_name=collection_knowledge,
+                limit=5,
+                with_payload=True,
+                with_vectors=False
+            )
+            debug_info = []
+            for r in debug_records:
+                payload_str = str(r.payload).replace("'", '"') # Formattazione per JSON
+                debug_info.append(f"ID: {r.id} | Payload: {payload_str}")
+            
+            summary["_DEBUG_SONDA"] = "ULTIMI 5 RECORD NEL DB: \n" + "\n".join(debug_info)
+            summary["_DEBUG_ID_CERCATO"] = f"Stavo cercando client_id = '{client_id_clean}'"
+            
         return summary
     except Exception as e:
         return {"errore": str(e)}
