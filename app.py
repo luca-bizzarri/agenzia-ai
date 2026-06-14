@@ -21,6 +21,7 @@ st.markdown("""
     .debug-box {background-color: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap;}
     .channel-box {background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 5px;}
     .insight-box {background-color: #e8f4f8; border-left: 4px solid #1E88E5; padding: 15px; border-radius: 4px; margin-bottom: 15px;}
+    .context-box {background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; border-radius: 4px; margin-bottom: 15px; font-size: 0.9rem;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -193,22 +194,29 @@ elif task_type == "📅 Piano Editoriale Completo":
     else:
         st.success(f"🎯 Piano configurato: {totale} contenuti totali")
         if st.button(f"🚀 GENERA PIANO ({totale} contenuti)", type="primary", use_container_width=True):
-            with st.spinner("L'Agente Creativo sta componendo il piano..."):
+            with st.spinner("Recupero contesto e composizione del piano..."):
+                # 1. RECUPERO DEL CONTESTO DAI FILE CARICATI
                 context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce, link riferimento")
+                
+                # 2. MOSTRIAMO ALL'UTENTE COSA STA LEGGENDO L'AI (PROVA DEFINITIVA)
+                with st.expander("🔍 Vedi cosa sta leggendo l'AI (Contesto Recuperato dai tuoi file)", expanded=False):
+                    st.markdown(f'<div class="context-box">{context}</div>', unsafe_allow_html=True)
+                    st.caption("Se qui vedi il testo dei tuoi PDF/DOCX, l'AI lo userà come base. Se vedi 'Nessuna informazione', carica prima i file nella scheda Memoria.")
+                
                 canali_str = "\n".join([f"- {k}: {v} contenuti" for k, v in canali_config.items()])
                 longform_str = "\n".join([f"- {k}: {v} contenuti" for k, v in longform_config.items()]) if longform_config else "Nessuno"
                 
-                # PROMPT AGGIORNATO: VIETA PLACEHOLDER E IMPONE COPY COMPLETI
+                # 3. PROMPT AGGIORNATO: FORZA L'USO DEL CONTESTO
                 prompt_pe = (
                     f"Sei un Content Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT usando il PUNTO E VIRGOLA (;) come separatore.\n\n"
-                    f"## CONTESTO CLIENTE:\n{context}\n\n"
+                    f"## CONTESTO CLIENTE (USA QUESTO COME BASE ASSOLUTA):\n{context}\n\n"
                     f"## CONFIGURAZIONE:\nPeriodo: {mese} | Durata: {durata} | Obiettivo: {obiettivo} | Tema: {tema} | Note: {istruzioni_extra}\n"
                     f"Social:\n{canali_str}\nLong-form:\n{longform_str}\n\n"
                     f"## COLONNE CSV OBBLIGATORIE (separate da ; ):\nTipo;Data;Titolo/Tema;Hook;Copy/Script;CTA;Brief_Visivo;Hashtag_SEO;Note\n\n"
                     f"## ISTRUZIONI DI COMPILAZIONE CRITICHE:\n"
-                    f"1. **Copy/Script**: DEVE essere il testo COMPLETO, pronto per la pubblicazione. VIETATO usare placeholder come '[Inserisci testo qui]', 'Lorem ipsum' o 'Descrivi qui'. Scrivi il post intero con emoji (se adatto al canale) e formattazione.\n"
-                    f"2. **Brief_Visivo**: Descrivi in dettaglio cosa deve mostrare l'immagine o il video (soggetto, colori, azione).\n"
-                    f"3. Genera ESATTAMENTE il numero di contenuti richiesti. Rispetta tono di voce e ICP. NON usare il punto e virgola all'interno dei testi, usa solo la virgola. Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
+                    f"1. **Copy/Script**: DEVE essere il testo COMPLETO, pronto per la pubblicazione. VIETATO usare placeholder come '[Inserisci testo qui]', 'Lorem ipsum' o 'Descrivi qui'. Scrivi il post intero basandoti SULLE INFORMAZIONI DEL CONTESTO CLIENTE.\n"
+                    f"2. **Brief_Visivo**: Descrivi in dettaglio cosa deve mostrare l'immagine o il video, allineandolo al brand book del contesto.\n"
+                    f"3. Genera ESATTAMENTE il numero di contenuti richiesti. Non inventare promesse o dati che non sono nel contesto. NON usare il punto e virgola all'interno dei testi. Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
                 )
                 response = rag.llm.invoke(prompt_pe).content
                 try:
