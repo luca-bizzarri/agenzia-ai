@@ -195,10 +195,8 @@ elif task_type == "📅 Piano Editoriale Completo":
         st.success(f"🎯 Piano configurato: {totale} contenuti totali")
         if st.button(f"🚀 GENERA PIANO ({totale} contenuti)", type="primary", use_container_width=True):
             with st.spinner("Recupero contesto e composizione del piano..."):
-                # 1. RECUPERO DEL CONTESTO DAI FILE CARICATI
                 context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce, link riferimento")
                 
-                # 2. MOSTRIAMO ALL'UTENTE COSA STA LEGGENDO L'AI (PROVA DEFINITIVA)
                 with st.expander("🔍 Vedi cosa sta leggendo l'AI (Contesto Recuperato dai tuoi file)", expanded=False):
                     st.markdown(f'<div class="context-box">{context}</div>', unsafe_allow_html=True)
                     st.caption("Se qui vedi il testo dei tuoi PDF/DOCX, l'AI lo userà come base. Se vedi 'Nessuna informazione', carica prima i file nella scheda Memoria.")
@@ -206,17 +204,22 @@ elif task_type == "📅 Piano Editoriale Completo":
                 canali_str = "\n".join([f"- {k}: {v} contenuti" for k, v in canali_config.items()])
                 longform_str = "\n".join([f"- {k}: {v} contenuti" for k, v in longform_config.items()]) if longform_config else "Nessuno"
                 
-                # 3. PROMPT AGGIORNATO: FORZA L'USO DEL CONTESTO
+                # PROMPT AGGIORNATO: SEVERO SU COPY COMPLETI E ALLINEAMENTO AL TEMA
                 prompt_pe = (
                     f"Sei un Content Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT usando il PUNTO E VIRGOLA (;) come separatore.\n\n"
                     f"## CONTESTO CLIENTE (USA QUESTO COME BASE ASSOLUTA):\n{context}\n\n"
-                    f"## CONFIGURAZIONE:\nPeriodo: {mese} | Durata: {durata} | Obiettivo: {obiettivo} | Tema: {tema} | Note: {istruzioni_extra}\n"
+                    f"## CONFIGURAZIONE:\nPeriodo: {mese} | Durata: {durata} | Obiettivo: {obiettivo} | TEMA CENTRALE OBBLIGATORIO: {tema} | Note: {istruzioni_extra}\n"
                     f"Social:\n{canali_str}\nLong-form:\n{longform_str}\n\n"
                     f"## COLONNE CSV OBBLIGATORIE (separate da ; ):\nTipo;Data;Titolo/Tema;Hook;Copy/Script;CTA;Brief_Visivo;Hashtag_SEO;Note\n\n"
-                    f"## ISTRUZIONI DI COMPILAZIONE CRITICHE:\n"
-                    f"1. **Copy/Script**: DEVE essere il testo COMPLETO, pronto per la pubblicazione. VIETATO usare placeholder come '[Inserisci testo qui]', 'Lorem ipsum' o 'Descrivi qui'. Scrivi il post intero basandoti SULLE INFORMAZIONI DEL CONTESTO CLIENTE.\n"
-                    f"2. **Brief_Visivo**: Descrivi in dettaglio cosa deve mostrare l'immagine o il video, allineandolo al brand book del contesto.\n"
-                    f"3. Genera ESATTAMENTE il numero di contenuti richiesti. Non inventare promesse o dati che non sono nel contesto. NON usare il punto e virgola all'interno dei testi. Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
+                    f"## ISTRUZIONI DI COMPILAZIONE CRITICHE E VINCOLANTI:\n"
+                    f"1. **ALLINEAMENTO AL TEMA CENTRALE**: OGNI singolo contenuto (titolo, hook, copy) DEVE ruotare attorno al tema '{tema}'. È vietato generare contenuti che non siano direttamente collegati a questo tema. Il tema è il filo conduttore di TUTTO il piano.\n"
+                    f"2. **COPY COMPLETI E LUNGHI**: I copy NON devono essere brevi o accennati. Devono essere post COMPLETI, pronti per la pubblicazione.\n"
+                    f"   - Per LinkedIn: MINIMO 150-250 parole, con struttura articolata (intro, sviluppo, conclusione), emoji professionali, e formattazione a paragrafi.\n"
+                    f"   - Per Instagram: MINIMO 80-150 parole, con emoji, hashtag integrati nel testo, e call-to-action chiara.\n"
+                    f"   - Per Blog/Newsletter: MINIMO 400-600 parole, con struttura completa (titolo, intro, punti chiave, conclusione).\n"
+                    f"3. **VIETATO**: Usare placeholder come '[Inserisci testo]', 'Lorem ipsum', 'Descrivi qui', o frasi generiche di 2-3 righe. Scrivi il testo REALE e COMPLETO.\n"
+                    f"4. **Brief_Visivo**: Descrivi in dettaglio l'immagine/video (soggetto, colori, azione, mood), allineandoti al brand book del contesto.\n"
+                    f"5. Genera ESATTAMENTE il numero di contenuti richiesti. Non inventare dati non presenti nel contesto. NON usare il punto e virgola all'interno dei testi. Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
                 )
                 response = rag.llm.invoke(prompt_pe).content
                 try:
@@ -231,7 +234,7 @@ elif task_type == "📅 Piano Editoriale Completo":
                     doc = docx.Document()
                     doc.add_heading(f'Piano Editoriale - {client_id}', 0)
                     doc.add_paragraph(f'Periodo: {mese} | Obiettivo: {obiettivo} | Durata: {durata}')
-                    doc.add_paragraph(f'Tema: {tema}')
+                    doc.add_paragraph(f'Tema Centrale: {tema}')
                     doc.add_paragraph(' ')
                     
                     table = doc.add_table(rows=1, cols=len(df.columns))
