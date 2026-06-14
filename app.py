@@ -3,6 +3,8 @@ import pandas as pd
 import io
 import time
 import rag_engine as rag
+import PyPDF2
+import docx
 
 st.set_page_config(page_title="Agenzia AI Hub", layout="wide", page_icon="🚀")
 
@@ -17,40 +19,27 @@ st.markdown("""
 # SIDEBAR: GESTIONE CLIENTI
 # ==========================================
 st.sidebar.title("🏢 Agenzia AI Hub")
-
 all_clients = rag.get_all_clients()
 client_options = ["➕ CREA NUOVO CLIENTE..."] + all_clients
 selected_option = st.sidebar.selectbox("👤 Seleziona Cliente", client_options, key="client_selector")
-
 client_id = ""
 
 if selected_option == "➕ CREA NUOVO CLIENTE...":
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🆕 Nuovo Cliente")
-    
-    new_client_id = st.sidebar.text_input(
-        "ID Cliente (es. Nike, Mario_Rossi, ACME_Corp)", 
-        key="new_client_input",
-        help="Le maiuscole verranno mantenute. Usa '_' al posto degli spazi."
-    ).strip().replace(" ", "_")
-    
+    new_client_id = st.sidebar.text_input("ID Cliente (es. Nike, Mario_Rossi)", key="new_client_input").strip().replace(" ", "_")
     if st.sidebar.button("✅ CREA CLIENTE", type="primary", use_container_width=True):
         if not new_client_id:
-            st.sidebar.error("⚠️ Inserisci un ID per il cliente")
+            st.sidebar.error("⚠️ Inserisci un ID")
         elif new_client_id in all_clients:
             st.sidebar.warning(f"Il cliente '{new_client_id}' esiste già.")
         else:
-            with st.sidebar.spinner(f"Creazione cliente '{new_client_id}' in corso..."):
-                success_registry = rag.register_client(new_client_id)
-                rag.add_document(new_client_id, f"Cliente {new_client_id} inizializzato nel sistema.", doc_type="sistema")
-                
-                if success_registry:
+            with st.sidebar.spinner(f"Creazione in corso..."):
+                if rag.register_client(new_client_id):
+                    rag.add_document(new_client_id, f"Cliente {new_client_id} inizializzato.", doc_type="sistema")
                     st.sidebar.success(f"✅ Cliente '{new_client_id}' creato!")
-                    st.sidebar.info("Aggiornamento menu...")
                     time.sleep(1)
                     st.rerun()
-                else:
-                    st.sidebar.error("❌ Errore nella creazione del cliente.")
 else:
     client_id = selected_option
     st.sidebar.markdown("---")
@@ -59,97 +48,128 @@ else:
 if client_id:
     st.sidebar.markdown("---")
     with st.sidebar.expander("⚠️ Elimina Cliente"):
-        st.warning(f"Stai per eliminare **TUTTI** i dati di '{client_id}'. Azione irreversibile.")
-        confirm_text = st.text_input(
-            f"Per confermare, scrivi esattamente: {client_id}", 
-            key="delete_confirm"
-        )
-        
+        st.warning(f"Stai per eliminare **TUTTI** i dati di '{client_id}'.")
+        confirm_text = st.text_input(f"Per confermare, scrivi: {client_id}", key="delete_confirm")
         if st.button(f"🗑️ ELIMINA '{client_id}'", type="secondary", use_container_width=True):
             if confirm_text.strip() == client_id:
                 with st.spinner("Eliminazione in corso..."):
                     success, message = rag.delete_client(client_id)
                     if success:
-                        st.success(f"✅ Cliente '{client_id}' eliminato definitivamente.")
+                        st.success(f"✅ Eliminato.")
                         time.sleep(1)
                         st.rerun()
                     else:
-                        st.error(f"❌ Errore Qdrant: {message}")
+                        st.error(f"❌ Errore: {message}")
             else:
-                st.error("❌ Testo non corrispondente. Eliminazione bloccata.")
+                st.error("❌ Testo non corrispondente.")
 
 if not client_id:
     st.markdown('<div class="main-header">Benvenuto in Agenzia AI Hub</div>', unsafe_allow_html=True)
-    st.info("👈 Seleziona un cliente dal menu a sinistra o creane uno nuovo per iniziare.")
+    st.info("👈 Seleziona o crea un cliente per iniziare.")
     st.stop()
 
 # ==========================================
 # MAIN AREA
 # ==========================================
 st.markdown(f'<div class="main-header">Dashboard: {client_id}</div>', unsafe_allow_html=True)
-
-task_type = st.radio("🤖 Scegli l'Agente", [
-    "📅 Piano Editoriale Completo", 
-    "🔍 Analisi Competitor / Trend", 
-    "🧠 Carica Documenti/Link Cliente"
-], horizontal=True)
-
+task_type = st.radio("🤖 Scegli l'Agente", ["📅 Piano Editoriale Completo", "🔍 Analisi Competitor / Trend", "🧠 Carica Memoria Cliente"], horizontal=True)
 st.markdown("---")
 
 # ==========================================
-# AGENTE 1: CARICA DOCUMENTI
+# AGENTE 1: CARICA MEMORIA (CON CATEGORIE DINAMICHE E FILE)
 # ==========================================
-if task_type == "🧠 Carica Documenti/Link Cliente":
-    st.markdown('<div class="sub-header">Alimenta la memoria e le regole stilistiche del cliente</div>', unsafe_allow_html=True)
+if task_type == "🧠 Carica Memoria Cliente":
+    st.markdown('<div class="sub-header">Alimenta la memoria del cliente con file, testo o istruzioni specifiche</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns([2, 1])
     with col1:
-        doc_text = st.text_area("Incolla qui testo da Brand Book, Link, Note call o vecchi copy di esempio:", height=300, key="doc_text_area")
-    with col2:
-        doc_type = st.selectbox("Tipo di documento", ["brand_book", "vecchi_copy", "note_call", "link_referenza", "regole_negative", "sistema"])
-        st.info("💡 Consiglio: Incolla 2-3 esempi di copy che il cliente ama. L'AI imparerà lo stile.")
+        uploaded_file = st.file_uploader("📎 Carica un file (PDF, DOCX, TXT)", type=["pdf", "docx", "txt"])
+        manual_text = st.text_area("Oppure incolla qui il testo manualmente:", height=250)
     
+    with col2:
+        st.markdown("**🏷️ Scegli o crea una categoria:**")
+        standard_categories = [
+            "📘 Brand Book / Linee Guida",
+            "👤 ICP / Personas & Pain/Gain",
+            "🛡️ Gestione Obiezioni",
+            "✍️ Esempi di Copy Approvati",
+            "📝 Istruzioni Specifiche di Creazione",
+            "📞 Note da Call / Briefing",
+            "🚫 Regole Negative",
+            "📊 Report / Dati Precedenti",
+            "➕ Scrivi una categoria personalizzata..."
+        ]
+        selected_cat = st.selectbox("Categoria", standard_categories)
+        
+        if "➕" in selected_cat:
+            doc_type = st.text_input("Nome della tua categoria (es. 'promo_natale', 'istruzioni_video')").strip().lower().replace(" ", "_")
+        else:
+            mapping = {
+                "📘 Brand Book / Linee Guida": "brand_book",
+                "👤 ICP / Personas & Pain/Gain": "icp_personas",
+                "🛡️ Gestione Obiezioni": "gestione_obiezioni",
+                "✍️ Esempi di Copy Approvati": "esempi_copy",
+                "📝 Istruzioni Specifiche di Creazione": "istruzioni_creazione",
+                "📞 Note da Call / Briefing": "note_call",
+                "🚫 Regole Negative": "regole_negative",
+                "📊 Report / Dati Precedenti": "report_dati"
+            }
+            doc_type = mapping.get(selected_cat, "generico")
+            
+        st.info(f"Salverai come: **`{doc_type}`**")
+
     if st.button("💾 Salva nella Memoria", type="primary"):
-        if doc_text.strip():
+        final_text = ""
+        if uploaded_file is not None:
+            try:
+                if uploaded_file.type == "text/plain":
+                    final_text = uploaded_file.read().decode("utf-8")
+                elif uploaded_file.type == "application/pdf":
+                    reader = PyPDF2.PdfReader(uploaded_file)
+                    final_text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
+                elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                    doc = docx.Document(uploaded_file)
+                    final_text = "\n".join([para.text for para in doc.paragraphs])
+            except Exception as e:
+                st.error(f"Errore nella lettura del file: {e}")
+        
+        if manual_text.strip():
+            final_text += "\n\n" + manual_text.strip()
+            
+        final_text = final_text.strip()
+        
+        if final_text:
             with st.spinner("Elaborazione e salvataggio in corso..."):
-                result = rag.add_document(client_id, doc_text, doc_type)
+                result = rag.add_document(client_id, final_text, doc_type)
                 st.success(result)
         else:
-            st.warning("Inserisci del testo prima di salvare.")
+            st.warning("⚠️ Carica un file o incolla del testo prima di salvare.")
 
 # ==========================================
 # AGENTE 2: PIANO EDITORIALE
 # ==========================================
 elif task_type == "📅 Piano Editoriale Completo":
-    st.markdown('<div class="sub-header">Genera un piano editoriale completo rispettando il tono di voce del cliente</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Genera un piano editoriale completo rispettando il tono di voce</div>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     with col1:
-        mese = st.text_input("📅 Mese/Periodo", "Novembre 2024")
-        obiettivo = st.selectbox("🎯 Obiettivo Principale", ["Brand Awareness", "Lead Generation", "Lancio Prodotto", "Fidelizzazione", "Engagement"])
+        mese = st.text_input("📅 Mese/Periodo", "Dicembre 2024")
+        obiettivo = st.selectbox("🎯 Obiettivo", ["Brand Awareness", "Lead Generation", "Lancio Prodotto", "Fidelizzazione", "Engagement"])
     with col2:
-        tema = st.text_input("💡 Tema Centrale o Campagna", "Es. Lancio collezione invernale")
-        canali = st.multiselect("📱 Canali", ["LinkedIn", "Instagram", "Facebook", "TikTok", "Newsletter"], default=["LinkedIn", "Instagram"])
-
-    istruzioni_extra = st.text_area("📝 Istruzioni specifiche (Opzionale)", placeholder="Es. Il cliente odia la parola 'sinergia', usa un tono più diretto.")
+        tema = st.text_input("💡 Tema Centrale", "Es. Campagna Natalizia")
+        canali = st.multiselect("📱 Canali", ["LinkedIn", "Instagram", "Facebook", "TikTok", "Newsletter"], default=["Instagram"])
 
     if st.button("🚀 Genera Bozza Piano Editoriale", type="primary"):
         with st.spinner("L'Agente Creativo sta lavorando..."):
-            context = rag.get_client_context(client_id, "regole stilistiche, tono di voce, brand book")
+            # La query è ampia per pescare brand book, ICP, istruzioni e obiezioni
+            context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce")
             
-            # SINTASSI A PROVA DI COPY-PASTE (Concatenazione di stringhe f)
             prompt_pe = (
-                f"Sei un Social Media Manager e Brand Strategist esperto. Genera un Piano Editoriale completo in formato CSV STRICT (senza codice markdown, senza spiegazioni, solo testo separato da virgole).\n"
-                f"Le colonne DEVONO essere esattamente queste: Data, Canale, Formato, Tema/Angolo, Hook, Copy, CTA, Brief Visivo.\n\n"
-                f"CONTESTO CLIENTE (Regole da rispettare tassativamente):\n{context}\n\n"
-                f"RICHIESTA:\n"
-                f"- Mese: {mese}\n"
-                f"- Obiettivo: {obiettivo}\n"
-                f"- Tema: {tema}\n"
-                f"- Canali: {', '.join(canali)}\n"
-                f"- Note extra: {istruzioni_extra}\n\n"
-                f"Genera 6 idee di post complete. Assicurati che il Copy rispetti le regole stilistiche del contesto cliente. Se ci sono virgole nel testo del copy, racchiudi il testo tra virgolette doppie.\n"
-                f"Rispondi SOLO con il CSV, includendo l'intestazione delle colonne come prima riga."
+                f"Sei un Social Media Manager e Brand Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT (solo testo separato da virgole, no markdown).\n"
+                f"Colonne ESATTE: Data, Canale, Formato, Tema/Angolo, Hook, Copy, CTA, Brief Visivo.\n\n"
+                f"CONTESTO CLIENTE (Rispetta tassativamente ICP, Pain/Gain, Obiezioni e Istruzioni di Creazione se presenti):\n{context}\n\n"
+                f"RICHIESTA: Mese: {mese}, Obiettivo: {obiettivo}, Tema: {tema}, Canali: {', '.join(canali)}\n"
+                f"Genera 6 idee. Se ci sono virgole nel Copy, racchiudilo tra virgolette doppie. Rispondi SOLO con il CSV, intestazione inclusa."
             )
             
             response = rag.llm.invoke(prompt_pe).content
@@ -157,61 +177,40 @@ elif task_type == "📅 Piano Editoriale Completo":
             try:
                 clean_response = response.replace("```csv", "").replace("```", "").strip()
                 df = pd.read_csv(io.StringIO(clean_response))
-                
                 st.session_state['original_pe'] = clean_response
                 st.session_state['current_pe_df'] = df
-                
-                st.success("✅ Bozza generata! Puoi modificare le celle direttamente nella tabella qui sotto.")
+                st.success("✅ Bozza generata! Modifica le celle direttamente nella tabella.")
                 st.data_editor(df, num_rows="dynamic", key="editable_df", height=500, use_container_width=True)
-                
             except Exception as e:
-                st.error("⚠️ Errore nel formato CSV. Ecco l'output grezzo:")
+                st.error("⚠️ Errore formato CSV. Output grezzo:")
                 st.code(response)
                 st.session_state['original_pe'] = response
 
     if 'current_pe_df' in st.session_state:
         st.markdown("---")
         st.markdown("### 🧠 Revisione e Apprendimento (Opzione B)")
-        st.write("Se hai modificato la tabella, clicca qui sotto. L'AI analizzerà le tue correzioni e imparerà la regola per le prossime volte.")
-        
         if st.button("💾 Salva e Insegna", type="secondary"):
             with st.spinner("L'Agente Analista sta confrontando le versioni..."):
-                modified_df = st.session_state['editable_df']
-                modified_csv = modified_df.to_csv(index=False)
-                original_csv = st.session_state['original_pe']
-                
-                result = rag.save_and_teach(client_id, original_csv, modified_csv)
+                modified_csv = st.session_state['editable_df'].to_csv(index=False)
+                result = rag.save_and_teach(client_id, st.session_state['original_pe'], modified_csv)
                 st.success(result)
 
 # ==========================================
 # AGENTE 3: ANALISI COMPETITOR / TREND
 # ==========================================
 elif task_type == "🔍 Analisi Competitor / Trend":
-    st.markdown('<div class="sub-header">Ricerca sul web trend attuali o analizza competitor specifici</div>', unsafe_allow_html=True)
-    
-    query_ricerca = st.text_input("🔍 Cosa vuoi cercare? (es. 'trend marketing B2B novembre 2024')")
-    num_result = st.slider("Numero di fonti da analizzare", 3, 10, 5)
-    
+    st.markdown('<div class="sub-header">Ricerca sul web trend o competitor</div>', unsafe_allow_html=True)
+    query_ricerca = st.text_input("🔍 Cosa cercare? (es. 'trend marketing B2B dicembre 2024')")
     if st.button("🌐 Avvia Ricerca Web", type="primary"):
         if query_ricerca:
-            with st.spinner("L'Agente Ricercatore sta scansionando il web..."):
-                search_results = rag.web_search(query_ricerca, num_results=num_result)
-                
+            with st.spinner("Ricerca in corso..."):
+                search_results = rag.web_search(query_ricerca, num_results=5)
                 if "Errore" in search_results or "⚠️" in search_results:
                     st.warning(search_results)
                 else:
-                    st.markdown("### 📊 Risultati della Ricerca")
+                    st.markdown("### 📊 Risultati")
                     st.markdown(search_results)
-                    
-                    with st.spinner("Sintesi degli insight in corso..."):
-                        context = rag.get_client_context(client_id, "tono di voce, obiettivi strategici")
-                        prompt_sintesi = (
-                            f"Sei un Brand Strategist. Ecco i risultati di una ricerca web:\n{search_results}\n"
-                            f"Il nostro cliente è '{client_id}'. Contesto strategico: {context}\n"
-                            f"Sintetizza questi risultati in 3 insight pratici e azionabili per il prossimo piano editoriale. Sii concreto."
-                        )
-                        sintesi = rag.llm.invoke(prompt_sintesi).content
-                        st.markdown("### 💡 Insight Strategici per il Cliente")
-                        st.info(sintesi)
-        else:
-            st.warning("Inserisci una query di ricerca.")
+                    with st.spinner("Sintesi insight..."):
+                        context = rag.get_client_context(client_id, "obiettivi strategici, ICP, pain gain")
+                        prompt_sintesi = f"Sei un Brand Strategist. Ricerca:\n{search_results}\nCliente: '{client_id}'. Contesto: {context}\nSintetizza in 3 insight pratici per il prossimo piano editoriale, collegandoli ai Pain/Gain del cliente."
+                        st.info(rag.llm.invoke(prompt_sintesi).content)

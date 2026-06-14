@@ -7,3 +7,5 @@ python-dotenv
 langchain-text-splitters
 pandas
 requests
+PyPDF2
+python-docx

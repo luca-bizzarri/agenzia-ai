@@ -21,7 +21,6 @@ SERPER_API_KEY = get_key("SERPER_API_KEY")
 
 client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
-# MODELLO EMBEDDING STANDARD UNIVERSALE
 embeddings = OpenAIEmbeddings(
     model="openai/text-embedding-3-small",
     openai_api_key=API_KEY,
@@ -31,72 +30,37 @@ embeddings = OpenAIEmbeddings(
 collection_knowledge = "agenzia_knowledge"
 collection_registry = "client_registry"
 
-# ==========================================
-# INIZIALIZZAZIONE ROBUSTA DELLE COLLEZIONI
-# Controlla le dimensioni e ricrea se necessario per evitare conflitti
-# ==========================================
 try:
     info = client.get_collection(collection_name=collection_knowledge)
-    # Estrai la dimensione in modo sicuro (gestisce sia vettori singoli che multipli)
-    vector_size = 1536 # fallback
+    vector_size = 1536
     if hasattr(info.config.params, 'vectors'):
         if isinstance(info.config.params.vectors, dict):
             first_key = list(info.config.params.vectors.keys())[0]
             vector_size = info.config.params.vectors[first_key].size
         else:
             vector_size = info.config.params.vectors.size
-            
     if vector_size != 1536:
         client.delete_collection(collection_name=collection_knowledge)
-        client.create_collection(
-            collection_name=collection_knowledge,
-            vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
-        )
+        client.create_collection(collection_name=collection_knowledge, vectors_config=VectorParams(size=1536, distance=Distance.COSINE))
 except Exception:
-    # Se la collezione non esiste, la creiamo da zero
-    client.create_collection(
-        collection_name=collection_knowledge,
-        vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
-    )
+    client.create_collection(collection_name=collection_knowledge, vectors_config=VectorParams(size=1536, distance=Distance.COSINE))
 
 try:
-    client.create_collection(
-        collection_name=collection_registry,
-        vectors_config=VectorParams(size=4, distance=Distance.COSINE),
-    )
+    client.create_collection(collection_name=collection_registry, vectors_config=VectorParams(size=4, distance=Distance.COSINE))
 except Exception:
     pass
 
 try:
-    client.create_payload_index(
-        collection_name=collection_knowledge,
-        field_name="client_id",
-        field_schema=PayloadSchemaType.KEYWORD
-    )
+    client.create_payload_index(collection_name=collection_knowledge, field_name="client_id", field_schema=PayloadSchemaType.KEYWORD)
 except Exception:
     pass
-
 try:
-    client.create_payload_index(
-        collection_name=collection_registry,
-        field_name="client_id",
-        field_schema=PayloadSchemaType.KEYWORD
-    )
+    client.create_payload_index(collection_name=collection_registry, field_name="client_id", field_schema=PayloadSchemaType.KEYWORD)
 except Exception:
     pass
 
-vectorstore = Qdrant(
-    client=client,
-    collection_name=collection_knowledge,
-    embeddings=embeddings,
-)
-
-llm = ChatOpenAI(
-    model=MODEL_NAME,
-    api_key=API_KEY,
-    base_url=API_BASE,
-    temperature=0.2
-)
+vectorstore = Qdrant(client=client, collection_name=collection_knowledge, embeddings=embeddings)
+llm = ChatOpenAI(model=MODEL_NAME, api_key=API_KEY, base_url=API_BASE, temperature=0.2)
 
 def _clean_id(client_id: str) -> str:
     return str(client_id).strip().replace(" ", "_")
@@ -111,11 +75,7 @@ def get_all_clients():
 
 def register_client(client_id: str):
     client_id_clean = _clean_id(client_id)
-    point = PointStruct(
-        id=str(uuid.uuid5(uuid.NAMESPACE_DNS, client_id_clean)),
-        vector=[0.1, 0.1, 0.1, 0.1],
-        payload={"client_id": client_id_clean}
-    )
+    point = PointStruct(id=str(uuid.uuid5(uuid.NAMESPACE_DNS, client_id_clean)), vector=[0.1, 0.1, 0.1, 0.1], payload={"client_id": client_id_clean})
     try:
         client.upsert(collection_name=collection_registry, points=[point])
         return True
@@ -130,14 +90,14 @@ def add_document(client_id: str, text: str, doc_type: str = "generico"):
     chunks = splitter.split_text(text)
     metadatas = [{"client_id": client_id_clean, "type": doc_type} for _ in chunks]
     vectorstore.add_texts(texts=chunks, metadatas=metadatas)
-    return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}'."
+    return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Categoria: {doc_type})."
 
-def get_client_context(client_id: str, query: str, k: int = 5):
+def get_client_context(client_id: str, query: str, k: int = 8): # Aumentato a 8 per catturare più contesto (ICP, istruzioni, ecc.)
     client_id_clean = _clean_id(client_id)
     docs = vectorstore.similarity_search(query, k=k, filter=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))]))
     if not docs:
         return "Nessuna informazione trovata."
-    return "\n\n---\n\n".join([doc.page_content for doc in docs])
+    return "\n\n---\n\n".join([f"[{doc.metadata.get('type', 'generico')}] {doc.page_content}" for doc in docs])
 
 def web_search(query: str, num_results: int = 3):
     if not SERPER_API_KEY:
