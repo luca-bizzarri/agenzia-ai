@@ -23,19 +23,18 @@ SERPER_API_KEY = get_key("SERPER_API_KEY")
 # 1. Connessione a Qdrant Cloud
 client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
-# 2. Embeddings VIA API
+# 2. Embeddings VIA API (dimensioni rimosse per compatibilità con OpenRouter)
 embeddings = OpenAIEmbeddings(
     model="nomic-ai/nomic-embed-text-v1.5",
     openai_api_key=API_KEY,
-    openai_api_base=API_BASE,
-    dimensions=768 
+    openai_api_base=API_BASE
+    # dimensions=768 <-- RIMOSSO PER EVITARE ERRORE 400 BAD REQUEST SU OPENROUTER
 )
 
 # 3. DUE COLLEZIONI SEPARATE
 collection_knowledge = "agenzia_knowledge"
 collection_registry = "client_registry"
 
-# Crea collezione conoscenza
 try:
     client.create_collection(
         collection_name=collection_knowledge,
@@ -44,7 +43,6 @@ try:
 except Exception:
     pass
 
-# Crea collezione registro
 try:
     client.create_collection(
         collection_name=collection_registry,
@@ -54,9 +52,8 @@ except Exception:
     pass
 
 # ==========================================
-# CORREZIONE CRUCIALE: CREA INDICE SUL PAYLOAD
+# CORREZIONE CRUCIALE: INDICI PAYLOAD
 # ==========================================
-# Questo dice a Qdrant che "client_id" è una stringa e può essere filtrata
 try:
     client.create_payload_index(
         collection_name=collection_knowledge,
@@ -64,7 +61,7 @@ try:
         field_schema=PayloadSchemaType.KEYWORD
     )
 except Exception:
-    pass # L'indice esiste già
+    pass
 
 try:
     client.create_payload_index(
@@ -73,7 +70,7 @@ try:
         field_schema=PayloadSchemaType.KEYWORD
     )
 except Exception:
-    pass # L'indice esiste già
+    pass
 
 vectorstore = Qdrant(
     client=client,
@@ -132,6 +129,9 @@ def register_client(client_id: str):
 # ==========================================
 def add_document(client_id: str, text: str, doc_type: str = "generico"):
     client_id_clean = _clean_id(client_id)
+    if not text or not text.strip():
+        return "⚠️ Testo vuoto, nessun dato salvato."
+        
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
     metadatas = [{"client_id": client_id_clean, "type": doc_type} for _ in chunks]
@@ -182,12 +182,10 @@ def delete_client(client_id: str):
     """ELIMINA COMPLETAMENTE un cliente. Restituisce (True/False, Messaggio)"""
     client_id_clean = _clean_id(client_id)
     try:
-        # 1. Elimina dalla knowledge base
         client.delete(
             collection_name=collection_knowledge,
             points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
         )
-        # 2. Elimina dal registro
         client.delete(
             collection_name=collection_registry,
             points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
