@@ -3,6 +3,7 @@ import pandas as pd
 import io
 import time
 import json
+import re
 import rag_engine as rag
 import PyPDF2
 import docx
@@ -167,24 +168,29 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                 time.sleep(1.5); st.rerun()
     
     with st.expander("🌐 Scansiona Link Web (Batch Multi-URL)", expanded=True):
-        st.info("💡 Incolla qui sotto tutti gli URL che vuoi far leggere all'AI (uno per riga). Il sistema visiterà ogni link, estrarrà il testo pulito e lo salverà nella memoria.")
-        urls_text = st.text_area("📋 Incolla gli URL (uno per riga)", height=200, placeholder="https://www.sitocliente.it/blog\nhttps://www.competitor1.it/about")
+        st.info("💡 Incolla qui sotto tutti gli URL. Il sistema li estrarrà automaticamente, anche se separati da spazi, virgole o a capo, e visiterà ogni pagina per leggerne il contenuto.")
+        urls_text = st.text_area("📋 Incolla gli URL (in qualsiasi formato)", height=200, placeholder="https://www.sitocliente.it/blog, www.competitor1.it/about \n www.fonte-autorevole.com/articolo")
         urls_file = st.file_uploader("Oppure carica un file TXT/CSV con la lista URL", type=["txt", "csv"], key="urls_file")
         
         if urls_file is not None:
             try:
                 file_content = urls_file.read().decode("utf-8")
                 urls_text = file_content
-                st.success(f"✅ Caricati {len([u for u in file_content.split('\n') if u.strip()])} URL dal file")
+                st.success("✅ File caricato. Gli URL verranno estratti automaticamente.")
             except Exception as e:
                 st.error(f"❌ Errore lettura file: {e}")
         
         if st.button("🚀 Scansiona e Salva Tutti i Link", type="primary", use_container_width=True):
-            urls_list = [u.strip() for u in urls_text.split('\n') if u.strip() and u.strip().startswith('http')]
+            # REGEX ROBUSTA: Estrae TUTTI gli URL (https:// o www.) ignorando spazi, virgole o a capo
+            raw_urls = re.findall(r'https?://[^\s,;)]+|www\.[^\s,;)]+', urls_text)
+            
+            # Pulisce i link da eventuali punteggiatura finale (punti, virgolette) e rimuove duplicati
+            urls_list = list(set([u.strip('.,)>"\'') for u in raw_urls]))
+            
             if not urls_list:
-                st.warning("⚠️ Nessun URL valido trovato. Assicurati che ogni riga inizi con http:// o https://")
+                st.warning("⚠️ Nessun URL valido trovato. Assicurati di incollare link che iniziano con http://, https:// o www.")
             else:
-                st.info(f"🎯 Avvio scansione di **{len(urls_list)} link**...")
+                st.info(f"🎯 Trovati **{len(urls_list)} link** unici. Avvio scansione...")
                 progress_bar = st.progress(0)
                 status_container = st.container()
                 results_log = []
@@ -195,12 +201,12 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                     success, msg = rag.scrape_and_save_url(client_id, url, doc_type="link_riferimento")
                     results_log.append(f"{'✅' if success else '❌'} {msg}")
                     progress_bar.progress((idx + 1) / len(urls_list))
-                    time.sleep(0.5)
+                    time.sleep(0.3) # Pausa breve per non sovraccaricare i server
                 
                 st.markdown("### 📊 Risultato Scansione")
                 st.markdown(f'<div class="debug-box">' + "\n".join(results_log) + "</div>", unsafe_allow_html=True)
                 success_count = sum(1 for r in results_log if r.startswith('✅'))
-                st.success(f"✅ Completato! {success_count}/{len(urls_list)} link scansionati con successo.")
+                st.success(f"✅ Completato! {success_count}/{len(urls_list)} link scansionati e salvati con successo.")
                 time.sleep(2)
                 st.rerun()
 
