@@ -23,7 +23,7 @@ SERPER_API_KEY = get_key("SERPER_API_KEY")
 # 1. Connessione a Qdrant Cloud
 client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
-# 2. Embeddings VIA API (ZERO consumo di RAM locale)
+# 2. Embeddings VIA API
 embeddings = OpenAIEmbeddings(
     model="nomic-ai/nomic-embed-text-v1.5",
     openai_api_key=API_KEY,
@@ -35,7 +35,6 @@ embeddings = OpenAIEmbeddings(
 collection_knowledge = "agenzia_knowledge"
 collection_registry = "client_registry"
 
-# Crea collezione conoscenza
 try:
     client.create_collection(
         collection_name=collection_knowledge,
@@ -44,7 +43,6 @@ try:
 except Exception:
     pass
 
-# Crea collezione registro
 try:
     client.create_collection(
         collection_name=collection_registry,
@@ -53,13 +51,10 @@ try:
 except Exception:
     pass
 
-# ==========================================
-# CORREZIONE CRUCIALE: 'embeddings' AL PLURALE
-# ==========================================
 vectorstore = Qdrant(
     client=client,
     collection_name=collection_knowledge,
-    embeddings=embeddings,   # <<< MARCO_POLO_TEST_999 >>>
+    embeddings=embeddings,
 )
 
 # 4. Modello LLM
@@ -90,7 +85,6 @@ def get_all_clients():
                 clients.append(record.payload.get("client_id"))
         return sorted(clients)
     except Exception as e:
-        print(f"Errore recupero clienti: {e}")
         return []
 
 def register_client(client_id: str):
@@ -106,20 +100,7 @@ def register_client(client_id: str):
     try:
         client.upsert(collection_name=collection_registry, points=[point])
         return True
-    except Exception as e:
-        print(f"Errore registrazione: {e}")
-        return False
-
-def unregister_client(client_id: str):
-    client_id_clean = _clean_id(client_id)
-    try:
-        client.delete(
-            collection_name=collection_registry,
-            points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
-        )
-        return True
-    except Exception as e:
-        print(f"Errore rimozione registro: {e}")
+    except Exception:
         return False
 
 # ==========================================
@@ -174,15 +155,20 @@ def save_and_teach(client_id: str, original_text: str, modified_text: str):
     return f"🧠 Regola appresa e salvata per '{client_id}':\n\n{rule_extracted}"
 
 def delete_client(client_id: str):
+    """ELIMINA COMPLETAMENTE un cliente. Restituisce (True/False, Messaggio di errore o successo)"""
     client_id_clean = _clean_id(client_id)
     try:
+        # 1. Elimina dalla knowledge base
         client.delete(
             collection_name=collection_knowledge,
             points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
         )
-        unregister_client(client_id_clean)
-        return True
+        # 2. Elimina dal registro
+        client.delete(
+            collection_name=collection_registry,
+            points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
+        )
+        return True, "Eliminato con successo"
     except Exception as e:
-        print(f"Errore eliminazione completa: {e}")
-        return False
-
+        # QUI CATTURIAMO L'ERRORE REALE E LO RESTITUIAMO ALL'APP
+        return False, str(e)

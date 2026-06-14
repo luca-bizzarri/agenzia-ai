@@ -68,13 +68,15 @@ if client_id:
         if st.button(f"🗑️ ELIMINA '{client_id}'", type="secondary", use_container_width=True):
             if confirm_text.strip() == client_id:
                 with st.spinner("Eliminazione in corso..."):
-                    success = rag.delete_client(client_id)
+                    # ORA RICEVIAMO ANCHE IL MESSAGGIO DI ERRORE SPECIFICO
+                    success, message = rag.delete_client(client_id)
                     if success:
                         st.success(f"✅ Cliente '{client_id}' eliminato definitivamente.")
                         time.sleep(1)
                         st.rerun()
                     else:
-                        st.error("❌ Errore durante l'eliminazione. Controlla i log.")
+                        # QUESTO MOSTRERÀ L'ERRORE REALE DI QDRANT SULLO SCHERMO
+                        st.error(f"❌ Errore Qdrant: {message}")
             else:
                 st.error("❌ Testo non corrispondente. Eliminazione bloccata.")
 
