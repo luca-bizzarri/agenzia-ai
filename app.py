@@ -194,28 +194,29 @@ elif task_type == "📅 Piano Editoriale Completo":
         st.success(f"🎯 Piano configurato: {totale} contenuti totali")
         if st.button(f"🚀 GENERA PIANO ({totale} contenuti)", type="primary", use_container_width=True):
             with st.spinner("L'Agente Creativo sta componendo il piano..."):
-                # ORA FUNZIONERÀ PERFETTAMENTE GRAZIE ALLA NUOVA FUNZIONE get_client_context
                 context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce, link riferimento")
                 canali_str = "\n".join([f"- {k}: {v} contenuti" for k, v in canali_config.items()])
                 longform_str = "\n".join([f"- {k}: {v} contenuti" for k, v in longform_config.items()]) if longform_config else "Nessuno"
                 
+                # PROMPT AGGIORNATO: USA PUNTO E VIRGOLA COME SEPARATORE
                 prompt_pe = (
-                    f"Sei un Content Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT.\n\n"
+                    f"Sei un Content Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT usando il PUNTO E VIRGOLA (;) come separatore di colonne. NON usare la virgola come separatore.\n\n"
                     f"## CONTESTO CLIENTE:\n{context}\n\n"
                     f"## CONFIGURAZIONE:\nPeriodo: {mese} | Durata: {durata} | Obiettivo: {obiettivo} | Tema: {tema} | Note: {istruzioni_extra}\n"
                     f"Social:\n{canali_str}\nLong-form:\n{longform_str}\n\n"
-                    f"## COLONNE CSV OBBLIGATORIE:\nTipo,Data,Titolo/Tema,Hook,Copy/Script,CTA,Brief_Visivo,Hashtag_SEO,Note\n\n"
-                    f"Genera ESATTAMENTE il numero di contenuti richiesti. Rispetta tono di voce e ICP. Se ci sono virgole nel Copy, racchiudilo tra virgolette doppie. Rispondi SOLO con il CSV, intestazione inclusa."
+                    f"## COLONNE CSV OBBLIGATORIE (separate da ; ):\nTipo;Data;Titolo/Tema;Hook;Copy/Script;CTA;Brief_Visivo;Hashtag_SEO;Note\n\n"
+                    f"Genera ESATTAMENTE il numero di contenuti richiesti. Rispetta tono di voce e ICP. NON usare il punto e virgola all'interno dei testi delle colonne, usa solo la virgola. Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
                 )
                 response = rag.llm.invoke(prompt_pe).content
                 try:
                     clean_response = response.replace("```csv", "").replace("```", "").strip()
-                    df = pd.read_csv(io.StringIO(clean_response))
+                    # PARSING ROBUSTO CON SEPARATORE ;
+                    df = pd.read_csv(io.StringIO(clean_response), sep=';')
                     st.session_state['original_pe'] = clean_response
                     st.session_state['current_pe_df'] = df
                     st.success(f"✅ Piano generato con {len(df)} contenuti!")
                     st.data_editor(df, num_rows="dynamic", key="editable_df", height=600, use_container_width=True)
-                    csv_export = df.to_csv(index=False).encode('utf-8')
+                    csv_export = df.to_csv(index=False, sep=';').encode('utf-8')
                     st.download_button(label="📥 Scarica CSV", data=csv_export, file_name=f"PED_{client_id}_{mese.replace(' ', '_')}.csv", mime="text/csv")
                 except Exception as e:
                     st.error("⚠️ Errore formato CSV. Output grezzo:"); st.code(response)
@@ -224,7 +225,7 @@ elif task_type == "📅 Piano Editoriale Completo":
         st.markdown("---")
         if st.button("💾 Salva e Insegna (Opzione B)", type="secondary"):
             with st.spinner("Analisi correzioni in corso..."):
-                result = rag.save_and_teach(client_id, st.session_state['original_pe'], st.session_state['editable_df'].to_csv(index=False))
+                result = rag.save_and_teach(client_id, st.session_state['original_pe'], st.session_state['editable_df'].to_csv(index=False, sep=';'))
                 st.success(result)
 
 elif task_type == "📊 Report ADS Performance":
