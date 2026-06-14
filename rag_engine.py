@@ -1,12 +1,11 @@
 import os
 import requests
 import streamlit as st
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.prompts import PromptTemplate
 from langchain_qdrant import Qdrant
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, Filter, FieldCondition, MatchValue, PointStruct
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 import uuid
 
@@ -24,23 +23,30 @@ SERPER_API_KEY = get_key("SERPER_API_KEY")
 # 1. Connessione a Qdrant Cloud
 client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
-# 2. Embeddings gratuiti e locali
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+# 2. Embeddings VIA API (ZERO consumo di RAM locale, ottimo per l'italiano)
+# Usiamo nomic-embed-text-v1.5 che è economico e performante su OpenRouter
+embeddings = OpenAIEmbeddings(
+    model="nomic-ai/nomic-embed-text-v1.5",
+    openai_api_key=API_KEY,
+    openai_api_base=API_BASE,
+    # Dimensione vettore per questo modello specifico
+    dimensions=768 
+)
 
 # 3. DUE COLLEZIONI SEPARATE
 collection_knowledge = "agenzia_knowledge"
 collection_registry = "client_registry"
 
-# Crea collezione conoscenza (con embeddings)
+# Crea collezione conoscenza
 try:
     client.create_collection(
         collection_name=collection_knowledge,
-        vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+        vectors_config=VectorParams(size=768, distance=Distance.COSINE), # Aggiornato a 768 per nomic
     )
 except Exception:
     pass
 
-# Crea collezione registro (SENZA embeddings, solo metadati)
+# Crea collezione registro
 try:
     client.create_collection(
         collection_name=collection_registry,
@@ -52,7 +58,7 @@ except Exception:
 vectorstore = Qdrant(
     client=client,
     collection_name=collection_knowledge,
-    embeddings=embeddings,
+    embedding=embeddings, # Nota: 'embedding' singolare per OpenAIEmbeddings in LangChain
 )
 
 # 4. Modello LLM
@@ -67,7 +73,7 @@ llm = ChatOpenAI(
 # GESTIONE REGISTRO CLIENTI
 # ==========================================
 def _clean_id(client_id: str) -> str:
-    """Pulisce l'ID mantenendo MAIUSCOLE/minuscole, rimuovendo spazi e caratteri speciali."""
+    """Pulisce l'ID mantenendo MAIUSCOLE/minuscole, rimuovendo spazi."""
     return str(client_id).strip().replace(" ", "_")
 
 def get_all_clients():
@@ -91,12 +97,10 @@ def get_all_clients():
 def register_client(client_id: str):
     """Registra un nuovo cliente nel registro dedicato."""
     client_id_clean = _clean_id(client_id)
-    
-    # ID deterministico basato sul nome esatto (case-sensitive)
     point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, client_id_clean))
     
     point = PointStruct(
-        id=point_id,
+        id=id,
         vector=[0.1, 0.1, 0.1, 0.1],
         payload={"client_id": client_id_clean}
     )
@@ -109,7 +113,7 @@ def register_client(client_id: str):
         return False
 
 def unregister_client(client_id: str):
-    """Rimuove un cliente dal registro usando il filtro (infallibile)."""
+    """Rimuove un cliente dal registro usando il filtro."""
     client_id_clean = _clean_id(client_id)
     try:
         client.delete(
@@ -180,12 +184,10 @@ def delete_client(client_id: str):
     """ELIMINA COMPLETAMENTE un cliente: registro + knowledge base."""
     client_id_clean = _clean_id(client_id)
     try:
-        # 1. Elimina dalla knowledge base
         client.delete(
             collection_name=collection_knowledge,
             points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
         )
-        # 2. Elimina dal registro
         unregister_client(client_id_clean)
         return True
     except Exception as e:

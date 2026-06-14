@@ -4,9 +4,9 @@ import io
 import time
 import rag_engine as rag
 
+# Ottimizzazione memoria: disabilita il warning di uso memoria di Streamlit se possibile
 st.set_page_config(page_title="Agenzia AI Hub", layout="wide", page_icon="🚀")
 
-# --- STILE CSS ---
 st.markdown("""
     <style>
     .main-header {font-size: 2.2rem; font-weight: bold; color: #1E88E5; margin-bottom: 0.5rem;}
@@ -19,16 +19,12 @@ st.markdown("""
 # ==========================================
 st.sidebar.title("🏢 Agenzia AI Hub")
 
-# 1. Recupera lista clienti
 all_clients = rag.get_all_clients()
-
-# 2. Menu a tendina
 client_options = ["➕ CREA NUOVO CLIENTE..."] + all_clients
 selected_option = st.sidebar.selectbox("👤 Seleziona Cliente", client_options, key="client_selector")
 
 client_id = ""
 
-# 3. Logica creazione nuovo cliente
 if selected_option == "➕ CREA NUOVO CLIENTE...":
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🆕 Nuovo Cliente")
@@ -56,14 +52,11 @@ if selected_option == "➕ CREA NUOVO CLIENTE...":
                     st.rerun()
                 else:
                     st.sidebar.error("❌ Errore nella creazione del cliente.")
-
 else:
-    # Cliente esistente selezionato
     client_id = selected_option
     st.sidebar.markdown("---")
     st.sidebar.success(f"🟢 Cliente attivo: **{client_id}**")
 
-# 4. Zona eliminazione sicura
 if client_id:
     st.sidebar.markdown("---")
     with st.sidebar.expander("⚠️ Elimina Cliente"):
@@ -86,7 +79,6 @@ if client_id:
             else:
                 st.error("❌ Testo non corrispondente. Eliminazione bloccata.")
 
-# 5. Blocco se nessun cliente è selezionato
 if not client_id:
     st.markdown('<div class="main-header">Benvenuto in Agenzia AI Hub</div>', unsafe_allow_html=True)
     st.info("👈 Seleziona un cliente dal menu a sinistra o creane uno nuovo per iniziare.")
@@ -105,9 +97,6 @@ task_type = st.radio("🤖 Scegli l'Agente", [
 
 st.markdown("---")
 
-# ==========================================
-# AGENTE 1: CARICA DOCUMENTI
-# ==========================================
 if task_type == "🧠 Carica Documenti/Link Cliente":
     st.markdown('<div class="sub-header">Alimenta la memoria e le regole stilistiche del cliente</div>', unsafe_allow_html=True)
     
@@ -126,9 +115,6 @@ if task_type == "🧠 Carica Documenti/Link Cliente":
         else:
             st.warning("Inserisci del testo prima di salvare.")
 
-# ==========================================
-# AGENTE 2: PIANO EDITORIALE
-# ==========================================
 elif task_type == "📅 Piano Editoriale Completo":
     st.markdown('<div class="sub-header">Genera un piano editoriale completo rispettando il tono di voce del cliente</div>', unsafe_allow_html=True)
     
@@ -193,9 +179,6 @@ Rispondi SOLO con il CSV, includendo l'intestazione delle colonne come prima rig
                 result = rag.save_and_teach(client_id, original_csv, modified_csv)
                 st.success(result)
 
-# ==========================================
-# AGENTE 3: ANALISI COMPETITOR / TREND
-# ==========================================
 elif task_type == "🔍 Analisi Competitor / Trend":
     st.markdown('<div class="sub-header">Ricerca sul web trend attuali o analizza competitor specifici</div>', unsafe_allow_html=True)
     
