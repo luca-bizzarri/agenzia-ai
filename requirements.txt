@@ -3,6 +3,7 @@ langchain
 langchain-openai
 langchain-huggingface
 langchain-qdrant
+langchain-text-splitters
 qdrant-client
 python-dotenv
 sentence-transformers
