@@ -27,7 +27,7 @@ client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 # 2. Embeddings gratuiti e locali
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
-# 3. DUE COLLEZIONI: una per i contenuti, una per il registro clienti
+# 3. DUE COLLEZIONI SEPARATE
 collection_knowledge = "agenzia_knowledge"
 collection_registry = "client_registry"
 
@@ -40,11 +40,11 @@ try:
 except Exception:
     pass
 
-# Crea collezione registro (SENZA embeddings, solo metadati - velocissima)
+# Crea collezione registro (SENZA embeddings, solo metadati)
 try:
     client.create_collection(
         collection_name=collection_registry,
-        vectors_config=VectorParams(size=4, distance=Distance.COSINE),  # vettore dummy minimo
+        vectors_config=VectorParams(size=4, distance=Distance.COSINE),
     )
 except Exception:
     pass
@@ -64,8 +64,12 @@ llm = ChatOpenAI(
 )
 
 # ==========================================
-# GESTIONE REGISTRO CLIENTI (NUOVO E INFALLIBILE)
+# GESTIONE REGISTRO CLIENTI
 # ==========================================
+def _clean_id(client_id: str) -> str:
+    """Pulisce l'ID mantenendo MAIUSCOLE/minuscole, rimuovendo spazi e caratteri speciali."""
+    return str(client_id).strip().replace(" ", "_")
+
 def get_all_clients():
     """Recupera la lista di TUTTI i clienti dal registro dedicato."""
     try:
@@ -85,46 +89,44 @@ def get_all_clients():
         return []
 
 def register_client(client_id: str):
-    """Registra un nuovo cliente nel registro dedicato. Garantisce che appaia nella tendina."""
-    client_id_clean = str(client_id).strip().lower()
+    """Registra un nuovo cliente nel registro dedicato."""
+    client_id_clean = _clean_id(client_id)
     
-    # Crea un punto con un vettore dummy (non serve semantic search qui)
-    dummy_vector = [0.1, 0.1, 0.1, 0.1]
+    # ID deterministico basato sul nome esatto (case-sensitive)
+    point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, client_id_clean))
+    
     point = PointStruct(
-        id=str(uuid.uuid5(uuid.NAMESPACE_DNS, client_id_clean)),  # ID deterministico
-        vector=dummy_vector,
+        id=point_id,
+        vector=[0.1, 0.1, 0.1, 0.1],
         payload={"client_id": client_id_clean}
     )
     
     try:
-        client.upsert(
-            collection_name=collection_registry,
-            points=[point]
-        )
+        client.upsert(collection_name=collection_registry, points=[point])
         return True
     except Exception as e:
-        print(f"Errore registrazione cliente: {e}")
+        print(f"Errore registrazione: {e}")
         return False
 
 def unregister_client(client_id: str):
-    """Rimuove un cliente dal registro."""
+    """Rimuove un cliente dal registro usando il filtro (infallibile)."""
+    client_id_clean = _clean_id(client_id)
     try:
-        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(client_id).strip().lower()))
         client.delete(
             collection_name=collection_registry,
-            points_selector=[point_id]
+            points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
         )
         return True
     except Exception as e:
-        print(f"Errore rimozione dal registro: {e}")
+        print(f"Errore rimozione registro: {e}")
         return False
 
 # ==========================================
-# GESTIONE CONTENUTI (QUELLO DI PRIMA)
+# GESTIONE CONTENUTI
 # ==========================================
 def add_document(client_id: str, text: str, doc_type: str = "generico"):
-    """Salva un documento nel database della conoscenza."""
-    client_id_clean = str(client_id).strip().lower()
+    """Salva un documento nella knowledge base."""
+    client_id_clean = _clean_id(client_id)
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
     metadatas = [{"client_id": client_id_clean, "type": doc_type} for _ in chunks]
@@ -132,8 +134,8 @@ def add_document(client_id: str, text: str, doc_type: str = "generico"):
     return f"✅ Salvati {len(chunks)} blocchi di memoria per '{client_id_clean}'."
 
 def get_client_context(client_id: str, query: str, k: int = 5):
-    """Recupera il contesto del cliente dalla knowledge base."""
-    client_id_clean = str(client_id).strip().lower()
+    """Recupera il contesto del cliente."""
+    client_id_clean = _clean_id(client_id)
     docs = vectorstore.similarity_search(
         query, 
         k=k, 
@@ -175,15 +177,13 @@ def save_and_teach(client_id: str, original_text: str, modified_text: str):
     return f"🧠 Regola appresa e salvata per '{client_id}':\n\n{rule_extracted}"
 
 def delete_client(client_id: str):
-    """ELIMINA COMPLETAMENTE un cliente: dal registro E dalla knowledge base."""
-    client_id_clean = str(client_id).strip().lower()
+    """ELIMINA COMPLETAMENTE un cliente: registro + knowledge base."""
+    client_id_clean = _clean_id(client_id)
     try:
         # 1. Elimina dalla knowledge base
         client.delete(
             collection_name=collection_knowledge,
-            points_selector=Filter(
-                must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))]
-            )
+            points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))])
         )
         # 2. Elimina dal registro
         unregister_client(client_id_clean)

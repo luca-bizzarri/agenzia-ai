@@ -19,7 +19,7 @@ st.markdown("""
 # ==========================================
 st.sidebar.title("🏢 Agenzia AI Hub")
 
-# 1. Recupera lista clienti dal REGISTRO DEDICATO (infallibile)
+# 1. Recupera lista clienti
 all_clients = rag.get_all_clients()
 
 # 2. Menu a tendina
@@ -34,10 +34,10 @@ if selected_option == "➕ CREA NUOVO CLIENTE...":
     st.sidebar.markdown("### 🆕 Nuovo Cliente")
     
     new_client_id = st.sidebar.text_input(
-        "ID Cliente (es. nike, mario_rossi)", 
+        "ID Cliente (es. Nike, Mario_Rossi, ACME_Corp)", 
         key="new_client_input",
-        help="Usa solo lettere minuscole, numeri e trattini bassi"
-    ).lower().strip().replace(" ", "_")
+        help="Le maiuscole verranno mantenute. Usa '_' al posto degli spazi."
+    ).strip().replace(" ", "_")
     
     if st.sidebar.button("✅ CREA CLIENTE", type="primary", use_container_width=True):
         if not new_client_id:
@@ -46,15 +46,8 @@ if selected_option == "➕ CREA NUOVO CLIENTE...":
             st.sidebar.warning(f"Il cliente '{new_client_id}' esiste già.")
         else:
             with st.sidebar.spinner(f"Creazione cliente '{new_client_id}' in corso..."):
-                # REGISTRA nel registro dedicato (garantisce che appaia nella tendina)
                 success_registry = rag.register_client(new_client_id)
-                
-                # Aggiungi anche un documento iniziale nella knowledge base
-                rag.add_document(
-                    new_client_id, 
-                    f"Cliente {new_client_id} inizializzato nel sistema.", 
-                    doc_type="sistema"
-                )
+                rag.add_document(new_client_id, f"Cliente {new_client_id} inizializzato nel sistema.", doc_type="sistema")
                 
                 if success_registry:
                     st.sidebar.success(f"✅ Cliente '{new_client_id}' creato!")
@@ -81,7 +74,7 @@ if client_id:
         )
         
         if st.button(f"🗑️ ELIMINA '{client_id}'", type="secondary", use_container_width=True):
-            if confirm_text.strip().lower() == client_id:
+            if confirm_text.strip() == client_id:
                 with st.spinner("Eliminazione in corso..."):
                     success = rag.delete_client(client_id)
                     if success:
@@ -89,9 +82,9 @@ if client_id:
                         time.sleep(1)
                         st.rerun()
                     else:
-                        st.error("❌ Errore durante l'eliminazione.")
+                        st.error("❌ Errore durante l'eliminazione. Controlla i log.")
             else:
-                st.error("❌ Testo di conferma errato. Eliminazione bloccata.")
+                st.error("❌ Testo non corrispondente. Eliminazione bloccata.")
 
 # 5. Blocco se nessun cliente è selezionato
 if not client_id:
