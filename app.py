@@ -96,6 +96,9 @@ task_type = st.radio("🤖 Scegli l'Agente", [
 
 st.markdown("---")
 
+# ==========================================
+# AGENTE 1: CARICA DOCUMENTI
+# ==========================================
 if task_type == "🧠 Carica Documenti/Link Cliente":
     st.markdown('<div class="sub-header">Alimenta la memoria e le regole stilistiche del cliente</div>', unsafe_allow_html=True)
     
@@ -114,6 +117,9 @@ if task_type == "🧠 Carica Documenti/Link Cliente":
         else:
             st.warning("Inserisci del testo prima di salvare.")
 
+# ==========================================
+# AGENTE 2: PIANO EDITORIALE
+# ==========================================
 elif task_type == "📅 Piano Editoriale Completo":
     st.markdown('<div class="sub-header">Genera un piano editoriale completo rispettando il tono di voce del cliente</div>', unsafe_allow_html=True)
     
@@ -129,15 +135,83 @@ elif task_type == "📅 Piano Editoriale Completo":
 
     if st.button("🚀 Genera Bozza Piano Editoriale", type="primary"):
         with st.spinner("L'Agente Creativo sta lavorando..."):
-            context = rag.get_client_context(client_id, f"regole stilistiche, tono di voce, brand book, informazioni su {tema}")
+            context = rag.get_client_context(client_id, "regole stilistiche, tono di voce, brand book")
             
-            prompt_pe = f"""Sei un Social Media Manager e Brand Strategist esperto. Genera un Piano Editoriale completo in formato CSV STRICT (senza codice markdown, senza spiegazioni, solo testo separato da virgole).
-Le colonne DEVONO essere esattamente queste: Data, Canale, Formato, Tema/Angolo, Hook, Copy, CTA, Brief Visivo.
+            # SINTASSI A PROVA DI COPY-PASTE (Concatenazione di stringhe f)
+            prompt_pe = (
+                f"Sei un Social Media Manager e Brand Strategist esperto. Genera un Piano Editoriale completo in formato CSV STRICT (senza codice markdown, senza spiegazioni, solo testo separato da virgole).\n"
+                f"Le colonne DEVONO essere esattamente queste: Data, Canale, Formato, Tema/Angolo, Hook, Copy, CTA, Brief Visivo.\n\n"
+                f"CONTESTO CLIENTE (Regole da rispettare tassativamente):\n{context}\n\n"
+                f"RICHIESTA:\n"
+                f"- Mese: {mese}\n"
+                f"- Obiettivo: {obiettivo}\n"
+                f"- Tema: {tema}\n"
+                f"- Canali: {', '.join(canali)}\n"
+                f"- Note extra: {istruzioni_extra}\n\n"
+                f"Genera 6 idee di post complete. Assicurati che il Copy rispetti le regole stilistiche del contesto cliente. Se ci sono virgole nel testo del copy, racchiudi il testo tra virgolette doppie.\n"
+                f"Rispondi SOLO con il CSV, includendo l'intestazione delle colonne come prima riga."
+            )
+            
+            response = rag.llm.invoke(prompt_pe).content
+            
+            try:
+                clean_response = response.replace("```csv", "").replace("```", "").strip()
+                df = pd.read_csv(io.StringIO(clean_response))
+                
+                st.session_state['original_pe'] = clean_response
+                st.session_state['current_pe_df'] = df
+                
+                st.success("✅ Bozza generata! Puoi modificare le celle direttamente nella tabella qui sotto.")
+                st.data_editor(df, num_rows="dynamic", key="editable_df", height=500, use_container_width=True)
+                
+            except Exception as e:
+                st.error("⚠️ Errore nel formato CSV. Ecco l'output grezzo:")
+                st.code(response)
+                st.session_state['original_pe'] = response
 
-CONTESTO CLIENTE (Regole da rispettare tassativamente):
-{context}
+    if 'current_pe_df' in st.session_state:
+        st.markdown("---")
+        st.markdown("### 🧠 Revisione e Apprendimento (Opzione B)")
+        st.write("Se hai modificato la tabella, clicca qui sotto. L'AI analizzerà le tue correzioni e imparerà la regola per le prossime volte.")
+        
+        if st.button("💾 Salva e Insegna", type="secondary"):
+            with st.spinner("L'Agente Analista sta confrontando le versioni..."):
+                modified_df = st.session_state['editable_df']
+                modified_csv = modified_df.to_csv(index=False)
+                original_csv = st.session_state['original_pe']
+                
+                result = rag.save_and_teach(client_id, original_csv, modified_csv)
+                st.success(result)
 
-RICHIESTA:
-- Mese: {mese}
-- Obiettivo: {obiettivo}
-- Tema: {tema}
+# ==========================================
+# AGENTE 3: ANALISI COMPETITOR / TREND
+# ==========================================
+elif task_type == "🔍 Analisi Competitor / Trend":
+    st.markdown('<div class="sub-header">Ricerca sul web trend attuali o analizza competitor specifici</div>', unsafe_allow_html=True)
+    
+    query_ricerca = st.text_input("🔍 Cosa vuoi cercare? (es. 'trend marketing B2B novembre 2024')")
+    num_result = st.slider("Numero di fonti da analizzare", 3, 10, 5)
+    
+    if st.button("🌐 Avvia Ricerca Web", type="primary"):
+        if query_ricerca:
+            with st.spinner("L'Agente Ricercatore sta scansionando il web..."):
+                search_results = rag.web_search(query_ricerca, num_results=num_result)
+                
+                if "Errore" in search_results or "⚠️" in search_results:
+                    st.warning(search_results)
+                else:
+                    st.markdown("### 📊 Risultati della Ricerca")
+                    st.markdown(search_results)
+                    
+                    with st.spinner("Sintesi degli insight in corso..."):
+                        context = rag.get_client_context(client_id, "tono di voce, obiettivi strategici")
+                        prompt_sintesi = (
+                            f"Sei un Brand Strategist. Ecco i risultati di una ricerca web:\n{search_results}\n"
+                            f"Il nostro cliente è '{client_id}'. Contesto strategico: {context}\n"
+                            f"Sintetizza questi risultati in 3 insight pratici e azionabili per il prossimo piano editoriale. Sii concreto."
+                        )
+                        sintesi = rag.llm.invoke(prompt_sintesi).content
+                        st.markdown("### 💡 Insight Strategici per il Cliente")
+                        st.info(sintesi)
+        else:
+            st.warning("Inserisci una query di ricerca.")
