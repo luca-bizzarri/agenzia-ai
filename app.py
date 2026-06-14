@@ -198,26 +198,70 @@ elif task_type == "📅 Piano Editoriale Completo":
                 canali_str = "\n".join([f"- {k}: {v} contenuti" for k, v in canali_config.items()])
                 longform_str = "\n".join([f"- {k}: {v} contenuti" for k, v in longform_config.items()]) if longform_config else "Nessuno"
                 
-                # PROMPT AGGIORNATO: USA PUNTO E VIRGOLA COME SEPARATORE
+                # PROMPT AGGIORNATO: VIETA PLACEHOLDER E IMPONE COPY COMPLETI
                 prompt_pe = (
-                    f"Sei un Content Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT usando il PUNTO E VIRGOLA (;) come separatore di colonne. NON usare la virgola come separatore.\n\n"
+                    f"Sei un Content Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT usando il PUNTO E VIRGOLA (;) come separatore.\n\n"
                     f"## CONTESTO CLIENTE:\n{context}\n\n"
                     f"## CONFIGURAZIONE:\nPeriodo: {mese} | Durata: {durata} | Obiettivo: {obiettivo} | Tema: {tema} | Note: {istruzioni_extra}\n"
                     f"Social:\n{canali_str}\nLong-form:\n{longform_str}\n\n"
                     f"## COLONNE CSV OBBLIGATORIE (separate da ; ):\nTipo;Data;Titolo/Tema;Hook;Copy/Script;CTA;Brief_Visivo;Hashtag_SEO;Note\n\n"
-                    f"Genera ESATTAMENTE il numero di contenuti richiesti. Rispetta tono di voce e ICP. NON usare il punto e virgola all'interno dei testi delle colonne, usa solo la virgola. Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
+                    f"## ISTRUZIONI DI COMPILAZIONE CRITICHE:\n"
+                    f"1. **Copy/Script**: DEVE essere il testo COMPLETO, pronto per la pubblicazione. VIETATO usare placeholder come '[Inserisci testo qui]', 'Lorem ipsum' o 'Descrivi qui'. Scrivi il post intero con emoji (se adatto al canale) e formattazione.\n"
+                    f"2. **Brief_Visivo**: Descrivi in dettaglio cosa deve mostrare l'immagine o il video (soggetto, colori, azione).\n"
+                    f"3. Genera ESATTAMENTE il numero di contenuti richiesti. Rispetta tono di voce e ICP. NON usare il punto e virgola all'interno dei testi, usa solo la virgola. Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
                 )
                 response = rag.llm.invoke(prompt_pe).content
                 try:
                     clean_response = response.replace("```csv", "").replace("```", "").strip()
-                    # PARSING ROBUSTO CON SEPARATORE ;
                     df = pd.read_csv(io.StringIO(clean_response), sep=';')
                     st.session_state['original_pe'] = clean_response
                     st.session_state['current_pe_df'] = df
                     st.success(f"✅ Piano generato con {len(df)} contenuti!")
                     st.data_editor(df, num_rows="dynamic", key="editable_df", height=600, use_container_width=True)
-                    csv_export = df.to_csv(index=False, sep=';').encode('utf-8')
-                    st.download_button(label="📥 Scarica CSV", data=csv_export, file_name=f"PED_{client_id}_{mese.replace(' ', '_')}.csv", mime="text/csv")
+                    
+                    # --- GENERAZIONE DOCX ---
+                    doc = docx.Document()
+                    doc.add_heading(f'Piano Editoriale - {client_id}', 0)
+                    doc.add_paragraph(f'Periodo: {mese} | Obiettivo: {obiettivo} | Durata: {durata}')
+                    doc.add_paragraph(f'Tema: {tema}')
+                    doc.add_paragraph(' ')
+                    
+                    table = doc.add_table(rows=1, cols=len(df.columns))
+                    table.style = 'Table Grid'
+                    hdr_cells = table.rows[0].cells
+                    for i, column_name in enumerate(df.columns):
+                        hdr_cells[i].text = str(column_name)
+                        hdr_cells[i].paragraphs[0].runs[0].font.bold = True
+                    
+                    for _, row in df.iterrows():
+                        row_cells = table.add_row().cells
+                        for i, item in enumerate(row):
+                            text = str(item).replace('\n', ' ') if pd.notna(item) else ""
+                            row_cells[i].text = text
+                    
+                    docx_buffer = io.BytesIO()
+                    doc.save(docx_buffer)
+                    docx_buffer.seek(0)
+                    
+                    col_dl1, col_dl2 = st.columns(2)
+                    with col_dl1:
+                        st.download_button(
+                            label="📥 Scarica Piano in WORD (DOCX)",
+                            data=docx_buffer,
+                            file_name=f"Piano_Editoriale_{client_id}_{mese.replace(' ', '_')}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True
+                        )
+                    with col_dl2:
+                        csv_export = df.to_csv(index=False, sep=';').encode('utf-8')
+                        st.download_button(
+                            label="📥 Scarica Piano in CSV (Backup)",
+                            data=csv_export,
+                            file_name=f"Piano_Editoriale_{client_id}_{mese.replace(' ', '_')}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                        
                 except Exception as e:
                     st.error("⚠️ Errore formato CSV. Output grezzo:"); st.code(response)
 
