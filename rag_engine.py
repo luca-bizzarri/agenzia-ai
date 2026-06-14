@@ -150,12 +150,42 @@ def delete_category(client_id: str, doc_type: str):
     except Exception as e:
         return False, str(e)
 
+# ==========================================
+# FUNZIONE DI RICERCA DIRETTA E ROBUSTA (BYPASSA BUG LANGCHAIN)
+# ==========================================
 def get_client_context(client_id: str, query: str, k: int = 8):
     client_id_clean = _clean_id(client_id)
-    docs = vectorstore.similarity_search(query, k=k, filter=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))]))
-    if not docs:
-        return "Nessuna informazione trovata."
-    return "\n\n---\n\n".join([f"[{doc.metadata.get('type', 'generico')}] {doc.page_content}" for doc in docs])
+    try:
+        # 1. Generiamo l'embedding della query direttamente
+        query_vector = embeddings.embed_query(query)
+        
+        # 2. Cerchiamo direttamente con il client Qdrant (più stabile dei wrapper LangChain)
+        search_result = client.search(
+            collection_name=collection_knowledge,
+            query_vector=query_vector,
+            query_filter=Filter(
+                must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))]
+            ),
+            limit=k
+        )
+        
+        if not search_result:
+            return "Nessuna informazione specifica trovata per questo cliente nel database."
+        
+        # 3. Formattiamo i risultati estraendo i dati dal payload annidato
+        formatted_docs = []
+        for hit in search_result:
+            payload = hit.payload
+            metadata = payload.get("metadata", {})
+            doc_type = metadata.get("type", "generico")
+            page_content = payload.get("page_content", "")
+            formatted_docs.append(f"[{doc_type}] {page_content}")
+            
+        return "\n\n---\n\n".join(formatted_docs)
+        
+    except Exception as e:
+        return f"Errore nel recupero del contesto: {str(e)}"
+# ==========================================
 
 def web_search(query: str, num_results: int = 3):
     if not SERPER_API_KEY:
