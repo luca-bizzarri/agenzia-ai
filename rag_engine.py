@@ -150,16 +150,17 @@ def delete_category(client_id: str, doc_type: str):
     except Exception as e:
         return False, str(e)
 
-# ==========================================
-# FUNZIONE DI RICERCA DIRETTA E ROBUSTA (BYPASSA BUG LANGCHAIN)
-# ==========================================
+# ==============================================================================
+# FUNZIONE CRITICA: RICERCA DIRETTA QDRANT (NO LANGCHAIN WRAPPER)
+# Se vedi "vectorstore.similarity_search" qui sotto, NON hai incollato bene!
+# ==============================================================================
 def get_client_context(client_id: str, query: str, k: int = 8):
     client_id_clean = _clean_id(client_id)
     try:
-        # 1. Generiamo l'embedding della query direttamente
+        # 1. Genera embedding della query direttamente
         query_vector = embeddings.embed_query(query)
         
-        # 2. Cerchiamo direttamente con il client Qdrant (più stabile dei wrapper LangChain)
+        # 2. Cerca DIRETTAMENTE con il client Qdrant (bypassa LangChain)
         search_result = client.search(
             collection_name=collection_knowledge,
             query_vector=query_vector,
@@ -172,7 +173,7 @@ def get_client_context(client_id: str, query: str, k: int = 8):
         if not search_result:
             return "Nessuna informazione specifica trovata per questo cliente nel database."
         
-        # 3. Formattiamo i risultati estraendo i dati dal payload annidato
+        # 3. Formatta i risultati estraendo i dati dal payload annidato
         formatted_docs = []
         for hit in search_result:
             payload = hit.payload
@@ -185,7 +186,7 @@ def get_client_context(client_id: str, query: str, k: int = 8):
         
     except Exception as e:
         return f"Errore nel recupero del contesto: {str(e)}"
-# ==========================================
+# ==============================================================================
 
 def web_search(query: str, num_results: int = 3):
     if not SERPER_API_KEY:
