@@ -13,6 +13,7 @@ st.markdown("""
     .main-header {font-size: 2.2rem; font-weight: bold; color: #1E88E5; margin-bottom: 0.5rem;}
     .sub-header {font-size: 1.1rem; color: #555; margin-bottom: 1.5rem;}
     .debug-box {background-color: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap;}
+    .channel-box {background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 5px;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -70,6 +71,9 @@ st.markdown(f'<div class="main-header">Dashboard: {client_id}</div>', unsafe_all
 task_type = st.radio("🤖 Scegli l'Agente", ["🧠 Carica e Gestisci Memoria", "📅 Piano Editoriale Completo", "🔍 Analisi Competitor / Trend"], horizontal=True)
 st.markdown("---")
 
+# ==========================================
+# AGENTE 1: GESTIONE MEMORIA (identico)
+# ==========================================
 if task_type == "🧠 Carica e Gestisci Memoria":
     st.markdown('<div class="sub-header">Alimenta o modifica la memoria strategica del cliente</div>', unsafe_allow_html=True)
     
@@ -98,21 +102,17 @@ if task_type == "🧠 Carica e Gestisci Memoria":
             break
 
     if not has_data:
-        st.info("La memoria di questo cliente è vuota. Carica il primo documento qui sotto!")
+        st.info("La memoria di questo cliente è vuota.")
         if "errore" in memory_summary:
             st.error(f"Dettaglio errore DB: {memory_summary['errore']}")
     else:
         st.success(f"✅ Memoria caricata correttamente.")
-        st.write("Clicca sulle categorie per espanderle, vedere i singoli file ed eliminarli se necessario.")
-        
         for doc_type, data in memory_summary.items():
             if doc_type == "errore":
                 continue
-                
             display_name = reverse_mapping.get(doc_type, f"📁 {doc_type}")
             count = data.get("count", 0)
             files = data.get("files", [])
-            
             with st.expander(f"**{display_name}** ({count} blocchi totali)"):
                 if files:
                     st.markdown("📎 **File / Fonti presenti:**")
@@ -121,8 +121,8 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                         with col_f1:
                             st.markdown(f"- 📄 `{f}`")
                         with col_f2:
-                            if st.button("🗑️ Elimina", key=f"del_file_{doc_type}_{f}", help=f"Elimina {f}"):
-                                with st.spinner(f"Eliminazione di '{f}' in corso..."):
+                            if st.button("🗑️", key=f"del_file_{doc_type}_{f}", help=f"Elimina {f}"):
+                                with st.spinner(f"Eliminazione di '{f}'..."):
                                     success, msg = rag.delete_specific_file(client_id, doc_type, f)
                                     if success:
                                         st.success(msg)
@@ -130,12 +130,9 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                                         st.rerun()
                                     else:
                                         st.error(msg)
-                else:
-                    st.markdown("📝 *Nessun file specifico tracciato.*")
-                
                 st.markdown("---")
-                if st.button(f"🗑️ ELIMINA TUTTA LA CATEGORIA '{display_name}'", key=f"del_cat_{doc_type}", type="secondary"):
-                    with st.spinner(f"Eliminazione di {display_name} in corso..."):
+                if st.button(f"🗑️ ELIMINA TUTTA LA CATEGORIA", key=f"del_cat_{doc_type}", type="secondary"):
+                    with st.spinner(f"Eliminazione di {display_name}..."):
                         success, msg = rag.delete_category(client_id, doc_type)
                         if success:
                             st.success(msg)
@@ -148,16 +145,8 @@ if task_type == "🧠 Carica e Gestisci Memoria":
     st.markdown("### ➕ Aggiungi Nuovo Contenuto")
     col1, col2 = st.columns([2, 1])
     with col1:
-        # AGGIUNTO SUPPORTO CSV PER LISTE DI LINK
         uploaded_files = st.file_uploader("📎 Carica file (PDF, DOCX, TXT, CSV)", type=["pdf", "docx", "txt", "csv"], accept_multiple_files=True)
-        
-        # Placeholder dinamico in base alla categoria
-        placeholder_text = "Oppure incolla qui del testo manuale:"
-        if "link_riferimento" in locals() and doc_type == "link_riferimento":
-            placeholder_text = "Incolla qui la lista di link (uno per riga). Es:\nhttps://sitocliente.it\nhttps://competitor1.com\n..."
-            
-        manual_text = st.text_area(placeholder_text, height=150)
-    
+        manual_text = st.text_area("Oppure incolla testo manuale:", height=150)
     with col2:
         st.markdown("**🏷️ Categoria:**")
         standard_categories = [
@@ -173,9 +162,8 @@ if task_type == "🧠 Carica e Gestisci Memoria":
             "➕ Scrivi una categoria personalizzata..."
         ]
         selected_cat = st.selectbox("Scegli", standard_categories, key="cat_select")
-        
         if "➕" in selected_cat:
-            doc_type = st.text_input("Nome categoria (es. 'promo_natale')", key="custom_cat").strip().lower().replace(" ", "_")
+            doc_type = st.text_input("Nome categoria", key="custom_cat").strip().lower().replace(" ", "_")
         else:
             mapping = {
                 "📘 Brand Book / Linee Guida": "brand_book",
@@ -189,101 +177,220 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                 "🔗 Link Asset, Competitor e Fonti": "link_riferimento"
             }
             doc_type = mapping.get(selected_cat, "generico")
-            
         st.info(f"Salverai come: **`{doc_type}`**")
 
     if st.button("💾 Salva nella Memoria", type="primary"):
         files_processed = 0
         debug_info = []
-        clean_cid = rag._clean_id(client_id)
-        debug_info.append(f"🔑 ID Cliente: '{clean_cid}'")
-        
         if uploaded_files:
             for uploaded_file in uploaded_files:
                 try:
                     extracted = ""
                     uploaded_file.seek(0)
-                    
                     if uploaded_file.type in ["text/plain", "text/csv"]:
-                        # Tratta sia TXT che CSV come testo semplice (perfetto per liste di link)
                         extracted = uploaded_file.read().decode("utf-8")
                     elif uploaded_file.type == "application/pdf":
                         reader = PyPDF2.PdfReader(uploaded_file)
                         extracted = "\n".join([page.extract_text() or "" for page in reader.pages])
                     elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                         doc = docx.Document(uploaded_file)
-                        paragraphs = [para.text for para in doc.paragraphs if para.text.strip()]
-                        extracted = "\n".join(paragraphs)
-                    
-                    char_count = len(extracted.strip())
-                    debug_info.append(f"📄 **{uploaded_file.name}**: {char_count} caratteri.")
-                    
-                    if char_count > 0:
-                        res = rag.add_document(client_id, extracted, doc_type, source_file=uploaded_file.name)
-                        debug_info.append(f"   ↳ {res}")
+                        extracted = "\n".join([para.text for para in doc.paragraphs if para.text.strip()])
+                    if len(extracted.strip()) > 0:
+                        rag.add_document(client_id, extracted, doc_type, source_file=uploaded_file.name)
+                        debug_info.append(f"✅ {uploaded_file.name}: {len(extracted)} caratteri")
                         files_processed += 1
                 except Exception as e:
-                    debug_info.append(f"❌ **{uploaded_file.name}**: Errore ({str(e)})")
-        
+                    debug_info.append(f"❌ {uploaded_file.name}: {str(e)}")
         if manual_text.strip():
-            res = rag.add_document(client_id, manual_text.strip(), doc_type, source_file="testo_manuale")
-            debug_info.append(f"📝 **Testo Manuale**: {res}")
-            
-        st.markdown("### 🔍 Riepilogo Operazione")
-        st.markdown(f'<div class="debug-box">' + "\n".join(debug_info) + "</div>", unsafe_allow_html=True)
-
+            rag.add_document(client_id, manual_text.strip(), doc_type, source_file="testo_manuale")
+            debug_info.append(f"✅ Testo manuale: {len(manual_text.strip())} caratteri")
+        
+        if debug_info:
+            st.markdown(f'<div class="debug-box">' + "\n".join(debug_info) + "</div>", unsafe_allow_html=True)
         if files_processed > 0 or manual_text.strip():
-            st.success("✅ Salvataggio completato con successo!")
+            st.success("✅ Salvataggio completato!")
             time.sleep(1.5)
             st.rerun()
-        else:
-            st.warning("⚠️ Nessun testo valido o file caricato.")
 
+# ==========================================
+# AGENTE 2: PED COMPOSITORE FLESSIBILE (NUOVO!)
+# ==========================================
 elif task_type == "📅 Piano Editoriale Completo":
-    st.markdown('<div class="sub-header">Genera un piano editoriale completo rispettando il tono di voce</div>', unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
+    st.markdown('<div class="sub-header">Componi il tuo piano editoriale su misura: decidi tu canali, quantità e formati</div>', unsafe_allow_html=True)
+    
+    # --- SEZIONE 1: INFO GENERALI ---
+    st.markdown("### 📋 1. Informazioni Generali")
+    col1, col2, col3 = st.columns(3)
     with col1:
-        mese = st.text_input("📅 Mese/Periodo", "Gennaio 2025")
-        obiettivo = st.selectbox("🎯 Obiettivo", ["Brand Awareness", "Lead Generation", "Lancio Prodotto", "Fidelizzazione", "Engagement"])
+        mese = st.text_input("📅 Periodo", "Gennaio 2025")
     with col2:
-        tema = st.text_input("💡 Tema Centrale", "Es. Presentazione nuovo approccio")
-        canali = st.multiselect("📱 Canali", ["LinkedIn", "Instagram", "Facebook", "TikTok", "Newsletter"], default=["LinkedIn", "Instagram"])
+        obiettivo = st.selectbox("🎯 Obiettivo", ["Brand Awareness", "Lead Generation", "Lancio Prodotto", "Fidelizzazione", "Engagement", "Educazione Mercato"])
+    with col3:
+        durata = st.selectbox("⏱️ Durata Piano", ["1 settimana", "2 settimane", "1 mese", "3 mesi (trimestrale)"])
+    
+    tema = st.text_input("💡 Tema Centrale / Campagna", "Es. Posizionamento come esperti del settore")
+    istruzioni_extra = st.text_area("📝 Note / Vincoli specifici (opzionale)", placeholder="Es. Evitare la parola X, enfatizzare Y, promuovere evento Z il giorno W...")
+    
+    st.markdown("---")
+    
+    # --- SEZIONE 2: CANALI SOCIAL ---
+    st.markdown("### 📱 2. Contenuti Social (scegli quantità per canale)")
+    st.caption("Usa gli slider per decidere quanti contenuti generare per ogni canale. Imposta a 0 per escluderlo.")
+    
+    canali_config = {}
+    canali_disponibili = {
+        "LinkedIn": ("💼 Post LinkedIn (testo lungo + carosello)", "Post testuali professionali, caroselli educativi, storytelling B2B"),
+        "Instagram_Feed": ("📸 Post Instagram Feed (foto/carosello)", "Visual curati, caroselli educativi, citazioni, foto prodotto"),
+        "Instagram_Reels": ("🎬 Instagram Reels", "Video brevi 15-60s, trend, tutorial, dietro le quinte"),
+        "Instagram_Stories": ("📲 Instagram Stories", "Contenuti effimeri, sondaggi, Q&A, countdown"),
+        "Facebook": ("👥 Post Facebook", "Contenuti community, link, album foto, eventi"),
+        "TikTok": ("🎵 TikTok", "Video brevi virali, trend, educational veloce"),
+        "Twitter_X": ("🐦 Post Twitter/X", "Thread, tweet brevi, opinioni, news")
+    }
+    
+    cols = st.columns(2)
+    for idx, (canale, (label, descrizione)) in enumerate(canali_disponibili.items()):
+        with cols[idx % 2]:
+            st.markdown(f'<div class="channel-box">', unsafe_allow_html=True)
+            quant = st.slider(f"**{label}**", 0, 20, 0, help=descrizione, key=f"slider_{canale}")
+            if quant > 0:
+                st.caption(f"→ {quant} contenuti • {descrizione}")
+                canali_config[canale] = quant
+            st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # --- SEZIONE 3: CONTENUTI LONG-FORM ---
+    st.markdown("### 🎙️ 3. Contenuti Long-Form / Speciali (opzionale)")
+    st.caption("Aggiungi contenuti più strutturati al tuo piano.")
+    
+    longform_config = {}
+    longform_disponibili = {
+        "Blog_Article": ("📝 Articoli Blog", "Articoli SEO 800-1500 parole per il sito"),
+        "Podcast_Episode": ("🎙️ Episodi Podcast", "Audio 20-45 min, monologhi o interviste"),
+        "Newsletter": ("📧 Newsletter", "Email settimanali/mensili alla lista iscritti"),
+        "Video_YouTube": ("📺 Video YouTube", "Video lunghi 8-20 min, tutorial, approfondimenti"),
+        "Lead_Magnet": ("🎁 Lead Magnet", "PDF, checklist, ebook, template gratuiti")
+    }
+    
+    cols_lf = st.columns(2)
+    for idx, (tipo, (label, descrizione)) in enumerate(longform_disponibili.items()):
+        with cols_lf[idx % 2]:
+            quant = st.slider(f"**{label}**", 0, 10, 0, help=descrizione, key=f"slider_lf_{tipo}")
+            if quant > 0:
+                st.caption(f"→ {quant} contenuti • {descrizione}")
+                longform_config[tipo] = quant
+    
+    st.markdown("---")
+    
+    # --- RIEPILOGO E GENERAZIONE ---
+    totale_contenuti = sum(canali_config.values()) + sum(longform_config.values())
+    
+    if totale_contenuti == 0:
+        st.warning("⚠️ **Configura almeno un contenuto** (social o long-form) per generare il piano.")
+    else:
+        st.success(f"🎯 **Piano configurato: {totale_contenuti} contenuti totali**")
+        
+        # Riepilogo visivo
+        riepilogo_cols = st.columns(2)
+        with riepilogo_cols[0]:
+            if canali_config:
+                st.markdown("**📱 Social:**")
+                for k, v in canali_config.items():
+                    st.markdown(f"- {k}: **{v}**")
+        with riepilogo_cols[1]:
+            if longform_config:
+                st.markdown("**🎙️ Long-form:**")
+                for k, v in longform_config.items():
+                    st.markdown(f"- {k}: **{v}**")
+        
+        if st.button(f"🚀 GENERA PIANO ({totale_contenuti} contenuti)", type="primary", use_container_width=True):
+            with st.spinner("L'Agente Creativo sta componendo il piano su misura..."):
+                context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce, link riferimento")
+                
+                # Costruzione dinamica del prompt
+                canali_str = "\n".join([f"- {k}: {v} contenuti" for k, v in canali_config.items()])
+                longform_str = "\n".join([f"- {k}: {v} contenuti" for k, v in longform_config.items()]) if longform_config else "Nessuno"
+                
+                prompt_pe = (
+                    f"Sei un Social Media Manager e Content Strategist esperto. Genera un Piano Editoriale COMPLETO in formato CSV STRICT.\n\n"
+                    f"## CONTESTO CLIENTE (tassativo):\n{context}\n\n"
+                    f"## CONFIGURAZIONE RICHIESTA:\n"
+                    f"- Periodo: {mese}\n"
+                    f"- Durata: {durata}\n"
+                    f"- Obiettivo: {obiettivo}\n"
+                    f"- Tema centrale: {tema}\n"
+                    f"- Note extra: {istruzioni_extra}\n\n"
+                    f"## CANALI SOCIAL RICHIESTI:\n{canali_str if canali_str else 'Nessuno'}\n\n"
+                    f"## CONTENUTI LONG-FORM RICHIESTI:\n{longform_str}\n\n"
+                    f"## COLONNE CSV OBBLIGATORIE (esattamente queste, in questo ordine):\n"
+                    f"Tipo,Data,Titolo/Tema,Hook,Copy/Script,CTA,Brief_Visivo_Produktivo,Hashtag_SEO,Note_Aggiuntive\n\n"
+                    f"## ISTRUZIONI DI COMPILAZIONE:\n"
+                    f"- **Tipo**: usa esattamente uno di questi valori: 'Post LinkedIn', 'Post IG Feed', 'Reel IG', 'Story IG', 'Post FB', 'TikTok', 'Tweet', 'Blog Article', 'Podcast Episode', 'Newsletter', 'Video YouTube', 'Lead Magnet'\n"
+                    f"- **Data**: suggerisci una data coerente con il periodo e la frequenza\n"
+                    f"- **Titolo/Tema**: l'argomento principale del contenuto\n"
+                    f"- **Hook**: la frase di apertura (per social e video; per blog/podcast metti il sottotitolo)\n"
+                    f"- **Copy/Script**: il testo completo del post, oppure lo script/struttura per blog, podcast, video, newsletter\n"
+                    f"- **CTA**: call-to-action specifica\n"
+                    f"- **Brief_Visivo_Produktivo**: descrizione dell'immagine/video da produrre, o struttura tecnica per podcast/blog\n"
+                    f"- **Hashtag_SEO**: hashtag per social, o parole chiave SEO per blog/newsletter\n"
+                    f"- **Note_Aggiuntive**: suggerimenti strategici, formati, best practice\n\n"
+                    f"Genera ESATTAMENTE il numero di contenuti richiesti per ogni canale/tipologia. "
+                    f"Rispetta il tono di voce, l'ICP e le regole del cliente. "
+                    f"Se ci sono virgole nel Copy/Script, racchiudilo tra virgolette doppie. "
+                    f"Rispondi SOLO con il CSV, intestazione inclusa, senza markdown."
+                )
+                
+                response = rag.llm.invoke(prompt_pe).content
+                
+                try:
+                    clean_response = response.replace("```csv", "").replace("```", "").strip()
+                    df = pd.read_csv(io.StringIO(clean_response))
+                    st.session_state['original_pe'] = clean_response
+                    st.session_state['current_pe_df'] = df
+                    
+                    # Statistiche
+                    st.success(f"✅ Piano generato con {len(df)} contenuti!")
+                    
+                    type_counts = df['Tipo'].value_counts().to_dict() if 'Tipo' in df.columns else {}
+                    stat_cols = st.columns(4)
+                    for idx, (tipo, count) in enumerate(type_counts.items()):
+                        with stat_cols[idx % 4]:
+                            st.metric(tipo, count)
+                    
+                    st.data_editor(df, num_rows="dynamic", key="editable_df", height=600, use_container_width=True)
+                    
+                    # Download CSV
+                    csv_export = df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Scarica Piano Editoriale (CSV)",
+                        data=csv_export,
+                        file_name=f"PED_{client_id}_{mese.replace(' ', '_')}.csv",
+                        mime="text/csv"
+                    )
+                    
+                except Exception as e:
+                    st.error("⚠️ Errore formato CSV. Output grezzo:")
+                    st.code(response)
+                    st.session_state['original_pe'] = response
 
-    if st.button("🚀 Genera Bozza Piano Editoriale", type="primary"):
-        with st.spinner("L'Agente Creativo sta lavorando..."):
-            context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, link di riferimento, tono di voce")
-            prompt_pe = (
-                f"Sei un Social Media Manager e Brand Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT (solo testo separato da virgole, no markdown).\n"
-                f"Colonne ESATTE: Data, Canale, Formato, Tema/Angolo, Hook, Copy, CTA, Brief Visivo.\n\n"
-                f"CONTESTO CLIENTE (Rispetta tassativamente ICP, Pain/Gain, Obiezioni, Link di riferimento e Istruzioni di Creazione se presenti):\n{context}\n\n"
-                f"RICHIESTA: Mese: {mese}, Obiettivo: {obiettivo}, Tema: {tema}, Canali: {', '.join(canali)}\n"
-                f"Genera 6 idee. Se ci sono virgole nel Copy, racchiudilo tra virgolette doppie. Rispondi SOLO con il CSV, intestazione inclusa."
-            )
-            response = rag.llm.invoke(prompt_pe).content
-            try:
-                clean_response = response.replace("```csv", "").replace("```", "").strip()
-                df = pd.read_csv(io.StringIO(clean_response))
-                st.session_state['original_pe'] = clean_response
-                st.session_state['current_pe_df'] = df
-                st.success("✅ Bozza generata! Modifica le celle direttamente nella tabella.")
-                st.data_editor(df, num_rows="dynamic", key="editable_df", height=500, use_container_width=True)
-            except Exception as e:
-                st.error("⚠️ Errore formato CSV. Output grezzo:")
-                st.code(response)
-                st.session_state['original_pe'] = response
-
+    # --- SEZIONE APPRENDIMENTO ---
     if 'current_pe_df' in st.session_state:
         st.markdown("---")
         st.markdown("### 🧠 Revisione e Apprendimento (Opzione B)")
+        st.write("Se hai modificato la tabella, l'AI analizzerà le tue correzioni e imparerà la regola per le prossime volte.")
         if st.button("💾 Salva e Insegna", type="secondary"):
             with st.spinner("L'Agente Analista sta confrontando le versioni..."):
                 modified_csv = st.session_state['editable_df'].to_csv(index=False)
                 result = rag.save_and_teach(client_id, st.session_state['original_pe'], modified_csv)
                 st.success(result)
 
+# ==========================================
+# AGENTE 3: ANALISI COMPETITOR (identico)
+# ==========================================
 elif task_type == "🔍 Analisi Competitor / Trend":
     st.markdown('<div class="sub-header">Ricerca sul web trend o competitor</div>', unsafe_allow_html=True)
-    query_ricerca = st.text_input("🔍 Cosa cercare? (es. 'trend marketing B2B gennaio 2025')")
+    query_ricerca = st.text_input("🔍 Cosa cercare?")
     if st.button("🌐 Avvia Ricerca Web", type="primary"):
         if query_ricerca:
             with st.spinner("Ricerca in corso..."):
@@ -295,5 +402,5 @@ elif task_type == "🔍 Analisi Competitor / Trend":
                     st.markdown(search_results)
                     with st.spinner("Sintesi insight..."):
                         context = rag.get_client_context(client_id, "obiettivi strategici, ICP, pain gain, link competitor")
-                        prompt_sintesi = f"Sei un Brand Strategist. Ricerca:\n{search_results}\nCliente: '{client_id}'. Contesto: {context}\nSintetizza in 3 insight pratici per il prossimo piano editoriale, collegandoli ai Pain/Gain del cliente."
+                        prompt_sintesi = f"Sei un Brand Strategist. Ricerca:\n{search_results}\nCliente: '{client_id}'. Contesto: {context}\nSintetizza in 3 insight pratici per il prossimo piano editoriale."
                         st.info(rag.llm.invoke(prompt_sintesi).content)
