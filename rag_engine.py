@@ -151,15 +151,15 @@ def delete_category(client_id: str, doc_type: str):
         return False, str(e)
 
 # ==============================================================================
-# FUNZIONE CRITICA: RICERCA DIRETTA QDRANT (SINTASSI MODERNA AGGIORNATA)
+# FUNZIONE CRITICA: RICERCA CON TRACCIAMENTO FONTE VISIVO
 # ==============================================================================
-def get_client_context(client_id: str, query: str, k: int = 8):
+def get_client_context(client_id: str, query: str, k: int = 12): # Aumentato a 12 per pescare da più file
     client_id_clean = _clean_id(client_id)
     try:
         # 1. Genera embedding della query direttamente
         query_vector = embeddings.embed_query(query)
         
-        # 2. Cerca DIRETTAMENTE con il client Qdrant usando query_points (API moderna)
+        # 2. Cerca DIRETTAMENTE con il client Qdrant usando query_points
         search_result = client.query_points(
             collection_name=collection_knowledge,
             query=query_vector,
@@ -167,19 +167,22 @@ def get_client_context(client_id: str, query: str, k: int = 8):
                 must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))]
             ),
             limit=k
-        ).points  # <-- .points estrae la lista effettiva dei risultati
+        ).points
         
         if not search_result:
             return "Nessuna informazione specifica trovata per questo cliente nel database."
         
-        # 3. Formatta i risultati estraendo i dati dal payload annidato
+        # 3. Formatta i risultati MOSTRANDO ESPLICITAMENTE IL NOME DEL FILE
         formatted_docs = []
         for hit in search_result:
             payload = hit.payload
             metadata = payload.get("metadata", {})
             doc_type = metadata.get("type", "generico")
+            source = metadata.get("source", "Sconosciuto")
             page_content = payload.get("page_content", "")
-            formatted_docs.append(f"[{doc_type}] {page_content}")
+            
+            # AGGIUNTA CRUCIALE: Mostriamo la fonte tra parentesi quadre
+            formatted_docs.append(f"📄 **Fonte:** `{source}` | **Tipo:** `{doc_type}`\n> {page_content}")
             
         return "\n\n---\n\n".join(formatted_docs)
         
