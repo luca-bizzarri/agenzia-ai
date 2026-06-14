@@ -68,14 +68,12 @@ if client_id:
         if st.button(f"🗑️ ELIMINA '{client_id}'", type="secondary", use_container_width=True):
             if confirm_text.strip() == client_id:
                 with st.spinner("Eliminazione in corso..."):
-                    # ORA RICEVIAMO ANCHE IL MESSAGGIO DI ERRORE SPECIFICO
                     success, message = rag.delete_client(client_id)
                     if success:
                         st.success(f"✅ Cliente '{client_id}' eliminato definitivamente.")
                         time.sleep(1)
                         st.rerun()
                     else:
-                        # QUESTO MOSTRERÀ L'ERRORE REALE DI QDRANT SULLO SCHERMO
                         st.error(f"❌ Errore Qdrant: {message}")
             else:
                 st.error("❌ Testo non corrispondente. Eliminazione bloccata.")
@@ -143,69 +141,3 @@ RICHIESTA:
 - Mese: {mese}
 - Obiettivo: {obiettivo}
 - Tema: {tema}
-- Canali: {', '.join(canali)}
-- Note extra: {istruzioni_extra}
-
-Genera 6 idee di post complete. Assicurati che il Copy rispetti le regole stilistiche del contesto cliente. Se ci sono virgole nel testo del copy, racchiudi il testo tra virgolette doppie.
-Rispondi SOLO con il CSV, includendo l'intestazione delle colonne come prima riga.
-"""
-            response = rag.llm.invoke(prompt_pe).content
-            
-            try:
-                clean_response = response.replace("```csv", "").replace("```", "").strip()
-                df = pd.read_csv(io.StringIO(clean_response))
-                
-                st.session_state['original_pe'] = clean_response
-                st.session_state['current_pe_df'] = df
-                
-                st.success("✅ Bozza generata! Puoi modificare le celle direttamente nella tabella qui sotto.")
-                st.data_editor(df, num_rows="dynamic", key="editable_df", height=500, use_container_width=True)
-                
-            except Exception as e:
-                st.error("⚠️ Errore nel formato CSV. Ecco l'output grezzo:")
-                st.code(response)
-                st.session_state['original_pe'] = response
-
-    if 'current_pe_df' in st.session_state:
-        st.markdown("---")
-        st.markdown("### 🧠 Revisione e Apprendimento (Opzione B)")
-        st.write("Se hai modificato la tabella, clicca qui sotto. L'AI analizzerà le tue correzioni e imparerà la regola per le prossime volte.")
-        
-        if st.button("💾 Salva e Insegna", type="secondary"):
-            with st.spinner("L'Agente Analista sta confrontando le versioni..."):
-                modified_df = st.session_state['editable_df']
-                modified_csv = modified_df.to_csv(index=False)
-                original_csv = st.session_state['original_pe']
-                
-                result = rag.save_and_teach(client_id, original_csv, modified_csv)
-                st.success(result)
-
-elif task_type == "🔍 Analisi Competitor / Trend":
-    st.markdown('<div class="sub-header">Ricerca sul web trend attuali o analizza competitor specifici</div>', unsafe_allow_html=True)
-    
-    query_ricerca = st.text_input("🔍 Cosa vuoi cercare? (es. 'trend marketing B2B novembre 2024')")
-    num_result = st.slider("Numero di fonti da analizzare", 3, 10, 5)
-    
-    if st.button("🌐 Avvia Ricerca Web", type="primary"):
-        if query_ricerca:
-            with st.spinner("L'Agente Ricercatore sta scansionando il web..."):
-                search_results = rag.web_search(query_ricerca, num_results=num_result)
-                
-                if "Errore" in search_results or "⚠️" in search_results:
-                    st.warning(search_results)
-                else:
-                    st.markdown("### 📊 Risultati della Ricerca")
-                    st.markdown(search_results)
-                    
-                    with st.spinner("Sintesi degli insight in corso..."):
-                        context = rag.get_client_context(client_id, "tono di voce, obiettivi strategici")
-                        prompt_sintesi = f"""Sei un Brand Strategist. Ecco i risultati di una ricerca web: 
-{search_results}
-Il nostro cliente è '{client_id}'. Contesto strategico: {context}
-Sintetizza questi risultati in 3 insight pratici e azionabili per il prossimo piano editoriale. Sii concreto.
-"""
-                        sintesi = rag.llm.invoke(prompt_sintesi).content
-                        st.markdown("### 💡 Insight Strategici per il Cliente")
-                        st.info(sintesi)
-        else:
-            st.warning("Inserisci una query di ricerca.")

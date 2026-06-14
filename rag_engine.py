@@ -21,9 +21,9 @@ SERPER_API_KEY = get_key("SERPER_API_KEY")
 
 client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
 
-# MODELLO EMBEDDING STANDARD E STABILE (NESSUN ERRORE DI DIMENSIONI)
+# MODELLO EMBEDDING STANDARD UNIVERSALE
 embeddings = OpenAIEmbeddings(
-    model="text-embedding-3-small",
+    model="openai/text-embedding-3-small",
     openai_api_key=API_KEY,
     openai_api_base=API_BASE
 )
@@ -31,13 +31,33 @@ embeddings = OpenAIEmbeddings(
 collection_knowledge = "agenzia_knowledge"
 collection_registry = "client_registry"
 
+# ==========================================
+# INIZIALIZZAZIONE ROBUSTA DELLE COLLEZIONI
+# Controlla le dimensioni e ricrea se necessario per evitare conflitti
+# ==========================================
 try:
+    info = client.get_collection(collection_name=collection_knowledge)
+    # Estrai la dimensione in modo sicuro (gestisce sia vettori singoli che multipli)
+    vector_size = 1536 # fallback
+    if hasattr(info.config.params, 'vectors'):
+        if isinstance(info.config.params.vectors, dict):
+            first_key = list(info.config.params.vectors.keys())[0]
+            vector_size = info.config.params.vectors[first_key].size
+        else:
+            vector_size = info.config.params.vectors.size
+            
+    if vector_size != 1536:
+        client.delete_collection(collection_name=collection_knowledge)
+        client.create_collection(
+            collection_name=collection_knowledge,
+            vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
+        )
+except Exception:
+    # Se la collezione non esiste, la creiamo da zero
     client.create_collection(
         collection_name=collection_knowledge,
-        vectors_config=VectorParams(size=1536, distance=Distance.COSINE), # 1536 è la dimensione standard di text-embedding-3-small
+        vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
     )
-except Exception:
-    pass
 
 try:
     client.create_collection(
