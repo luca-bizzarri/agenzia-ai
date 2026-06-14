@@ -12,7 +12,6 @@ st.markdown("""
     <style>
     .main-header {font-size: 2.2rem; font-weight: bold; color: #1E88E5; margin-bottom: 0.5rem;}
     .sub-header {font-size: 1.1rem; color: #555; margin-bottom: 1.5rem;}
-    .memory-item {background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;}
     .debug-box {background-color: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 0.85rem; white-space: pre-wrap;}
     </style>
 """, unsafe_allow_html=True)
@@ -35,7 +34,7 @@ if selected_option == "➕ CREA NUOVO CLIENTE...":
         else:
             with st.sidebar.spinner(f"Creazione in corso..."):
                 if rag.register_client(new_client_id):
-                    rag.add_document(new_client_id, f"Cliente {new_client_id} inizializzato.", doc_type="sistema")
+                    rag.add_document(new_client_id, f"Cliente {new_client_id} inizializzato.", doc_type="sistema", source_file="sistema")
                     st.sidebar.success(f"✅ Cliente '{new_client_id}' creato!")
                     time.sleep(1)
                     st.rerun()
@@ -93,7 +92,7 @@ if task_type == "🧠 Carica e Gestisci Memoria":
     
     has_data = False
     for key in memory_summary:
-        if key not in ["errore", "_DEBUG_SONDA", "_DEBUG_ID_CERCATO"]:
+        if key != "errore":
             has_data = True
             break
 
@@ -101,23 +100,29 @@ if task_type == "🧠 Carica e Gestisci Memoria":
         st.info("La memoria di questo cliente è vuota. Carica il primo documento qui sotto!")
         if "errore" in memory_summary:
             st.error(f"Dettaglio errore DB: {memory_summary['errore']}")
-            
-        if "_DEBUG_SONDA" in memory_summary:
-            st.warning("⚠️ Il filtro non ha trovato dati, ma ecco cosa c'è REALMENTE negli ultimi 5 record del database:")
-            st.markdown(f'<div class="debug-box">{memory_summary["_DEBUG_SONDA"]}\n\n{memory_summary["_DEBUG_ID_CERCATO"]}</div>', unsafe_allow_html=True)
     else:
         st.success(f"✅ Memoria caricata correttamente.")
-        st.write("Clicca su 🗑️ per eliminare una categoria specifica e ricaricarla aggiornata.")
-        for doc_type, count in memory_summary.items():
-            if doc_type in ["errore", "_DEBUG_SONDA", "_DEBUG_ID_CERCATO"]:
+        st.write("Clicca sulle categorie qui sotto per vedere i file associati ed eventualmente eliminarle.")
+        
+        for doc_type, data in memory_summary.items():
+            if doc_type == "errore":
                 continue
                 
             display_name = reverse_mapping.get(doc_type, f"📁 {doc_type}")
-            col_chk1, col_chk2 = st.columns([3, 1])
-            with col_chk1:
-                st.markdown(f"<div class='memory-item'><b>{display_name}</b> <span style='color:#666'>({count} blocchi)</span></div>", unsafe_allow_html=True)
-            with col_chk2:
-                if st.button(f"🗑️ Elimina", key=f"del_{doc_type}", type="secondary", use_container_width=True):
+            count = data.get("count", 0)
+            files = data.get("files", [])
+            
+            # ESPANDER: Nasconde i dettagli finché non si clicca
+            with st.expander(f"**{display_name}** ({count} blocchi totali)"):
+                if files:
+                    st.markdown("📎 **File caricati:**")
+                    for f in files:
+                        st.markdown(f"- 📄 `{f}`")
+                else:
+                    st.markdown("📝 *Solo testo manuale incollato o dati di sistema.*")
+                
+                st.markdown("---")
+                if st.button(f"🗑️ Elimina tutta la categoria '{display_name}'", key=f"del_{doc_type}", type="secondary"):
                     with st.spinner(f"Eliminazione di {display_name} in corso..."):
                         success, msg = rag.delete_category(client_id, doc_type)
                         if success:
@@ -167,13 +172,12 @@ if task_type == "🧠 Carica e Gestisci Memoria":
         st.info(f"Salverai come: **`{doc_type}`**")
 
     if st.button("💾 Salva nella Memoria", type="primary"):
-        final_text = ""
         files_processed = 0
         debug_info = []
-        
         clean_cid = rag._clean_id(client_id)
         debug_info.append(f"🔑 ID Cliente per salvataggio: '{clean_cid}'")
         
+        # 1. PROCESSIAMO OGNI FILE SINGOLARMENTE PER TRACCIARNE IL NOME
         if uploaded_files:
             for uploaded_file in uploaded_files:
                 try:
@@ -191,63 +195,44 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                         extracted = "\n".join(paragraphs)
                     
                     char_count = len(extracted.strip())
-                    snippet = extracted.strip()[:100].replace("\n", " ") + ("..." if char_count > 100 else "")
-                    
-                    debug_info.append(f"📄 **{uploaded_file.name}**")
-                    debug_info.append(f"   ↳ Caratteri estratti: {char_count}")
-                    debug_info.append(f"   ↳ Anteprima: '{snippet}'")
+                    debug_info.append(f"📄 **{uploaded_file.name}**: {char_count} caratteri.")
                     
                     if char_count > 0:
-                        final_text += f"\n\n--- FILE: {uploaded_file.name} ---\n" + extracted
+                        # SALVIAMO IL FILE SINGOLARMENTE CON IL SUO NOME COME SOURCE
+                        res = rag.add_document(client_id, extracted, doc_type, source_file=uploaded_file.name)
+                        debug_info.append(f"   ↳ {res}")
                         files_processed += 1
                 except Exception as e:
                     debug_info.append(f"❌ **{uploaded_file.name}**: Errore ({str(e)})")
         
+        # 2. PROCESSIAMO IL TESTO MANUALE SEPARATAMENTE
         if manual_text.strip():
-            final_text += "\n\n--- TESTO MANUALE ---\n" + manual_text.strip()
-            debug_info.append(f"📝 **Testo Manuale**: {len(manual_text.strip())} caratteri.")
+            res = rag.add_document(client_id, manual_text.strip(), doc_type, source_file="testo_manuale")
+            debug_info.append(f"📝 **Testo Manuale**: {res}")
             
-        final_text = final_text.strip()
-        
-        st.markdown("### 🔍 Pannello di Debug")
-        st.markdown(f'<div class="debug-box">' + "\n".join(debug_info) + f"\n\n✅ **TOTALE TESTO DA SALVARE:** {len(final_text)} caratteri.</div>", unsafe_allow_html=True)
+        st.markdown("### 🔍 Riepilogo Operazione")
+        st.markdown(f'<div class="debug-box">' + "\n".join(debug_info) + "</div>", unsafe_allow_html=True)
 
-        if final_text and len(final_text) >= 50:
-            with st.spinner(f"Elaborazione e salvataggio in corso..."):
-                result = rag.add_document(client_id, final_text, doc_type)
-                st.success(result)
-                
-                time.sleep(5) 
-                
-                new_summary = rag.get_memory_summary(client_id)
-                
-                if "_DEBUG_SONDA" in new_summary:
-                    st.error("⚠️ PROBLEMA DI INDICIZZAZIONE RILEVATO. Guarda il riquadro 'Memoria Attuale' qui sopra per vedere cosa ha salvato davvero il database.")
-                else:
-                    st.success("✅ Verifica completata: I dati sono stati trovati correttamente nel database.")
-                
-                time.sleep(1)
-                st.rerun()
-        elif final_text and len(final_text) < 50:
-            st.error("⛔ BLOCCATO: Testo troppo breve (< 50 caratteri).")
+        if files_processed > 0 or manual_text.strip():
+            st.success("✅ Salvataggio completato con successo!")
+            time.sleep(1.5)
+            st.rerun()
         else:
-            st.error("⛔ BLOCCATO: Nessun testo valido trovato. Controlla il Debug.")
+            st.warning("⚠️ Nessun testo valido o file caricato.")
 
 elif task_type == "📅 Piano Editoriale Completo":
     st.markdown('<div class="sub-header">Genera un piano editoriale completo rispettando il tono di voce</div>', unsafe_allow_html=True)
-    
     col1, col2 = st.columns(2)
     with col1:
-        mese = st.text_input("📅 Mese/Periodo", "Dicembre 2024")
+        mese = st.text_input("📅 Mese/Periodo", "Gennaio 2025")
         obiettivo = st.selectbox("🎯 Obiettivo", ["Brand Awareness", "Lead Generation", "Lancio Prodotto", "Fidelizzazione", "Engagement"])
     with col2:
-        tema = st.text_input("💡 Tema Centrale", "Es. Campagna Natalizia")
-        canali = st.multiselect("📱 Canali", ["LinkedIn", "Instagram", "Facebook", "TikTok", "Newsletter"], default=["Instagram"])
+        tema = st.text_input("💡 Tema Centrale", "Es. Presentazione nuovo approccio")
+        canali = st.multiselect("📱 Canali", ["LinkedIn", "Instagram", "Facebook", "TikTok", "Newsletter"], default=["LinkedIn", "Instagram"])
 
     if st.button("🚀 Genera Bozza Piano Editoriale", type="primary"):
         with st.spinner("L'Agente Creativo sta lavorando..."):
             context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, istruzioni di creazione, tono di voce")
-            
             prompt_pe = (
                 f"Sei un Social Media Manager e Brand Strategist esperto. Genera un Piano Editoriale in formato CSV STRICT (solo testo separato da virgole, no markdown).\n"
                 f"Colonne ESATTE: Data, Canale, Formato, Tema/Angolo, Hook, Copy, CTA, Brief Visivo.\n\n"
@@ -255,9 +240,7 @@ elif task_type == "📅 Piano Editoriale Completo":
                 f"RICHIESTA: Mese: {mese}, Obiettivo: {obiettivo}, Tema: {tema}, Canali: {', '.join(canali)}\n"
                 f"Genera 6 idee. Se ci sono virgole nel Copy, racchiudilo tra virgolette doppie. Rispondi SOLO con il CSV, intestazione inclusa."
             )
-            
             response = rag.llm.invoke(prompt_pe).content
-            
             try:
                 clean_response = response.replace("```csv", "").replace("```", "").strip()
                 df = pd.read_csv(io.StringIO(clean_response))
@@ -281,7 +264,7 @@ elif task_type == "📅 Piano Editoriale Completo":
 
 elif task_type == "🔍 Analisi Competitor / Trend":
     st.markdown('<div class="sub-header">Ricerca sul web trend o competitor</div>', unsafe_allow_html=True)
-    query_ricerca = st.text_input("🔍 Cosa cercare? (es. 'trend marketing B2B dicembre 2024')")
+    query_ricerca = st.text_input("🔍 Cosa cercare? (es. 'trend marketing B2B gennaio 2025')")
     if st.button("🌐 Avvia Ricerca Web", type="primary"):
         if query_ricerca:
             with st.spinner("Ricerca in corso..."):

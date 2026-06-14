@@ -50,13 +50,16 @@ try:
 except Exception:
     pass
 
-# INDICI PAYLOAD CORRETTI PER LA CHIAVE ANNIDATA
 try:
     client.create_payload_index(collection_name=collection_knowledge, field_name="metadata.client_id", field_schema=PayloadSchemaType.KEYWORD)
 except Exception:
     pass
 try:
     client.create_payload_index(collection_name=collection_knowledge, field_name="metadata.type", field_schema=PayloadSchemaType.KEYWORD)
+except Exception:
+    pass
+try:
+    client.create_payload_index(collection_name=collection_knowledge, field_name="metadata.source", field_schema=PayloadSchemaType.KEYWORD)
 except Exception:
     pass
 try:
@@ -87,21 +90,21 @@ def register_client(client_id: str):
     except Exception:
         return False
 
-def add_document(client_id: str, text: str, doc_type: str = "generico"):
+def add_document(client_id: str, text: str, doc_type: str = "generico", source_file: str = "manuale"):
     client_id_clean = _clean_id(client_id)
     if not text or len(text.strip()) < 50:
         return "⚠️ Il testo è troppo breve o vuoto per essere salvato."
     
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
-    metadatas = [{"client_id": client_id_clean, "type": doc_type} for _ in chunks]
+    # ORA SALVIAMO ANCHE IL NOME DEL FILE NEI METADATA
+    metadatas = [{"client_id": client_id_clean, "type": doc_type, "source": source_file} for _ in chunks]
     vectorstore.add_texts(texts=chunks, metadatas=metadatas)
-    return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Categoria: {doc_type})."
+    return f"✅ Salvati {len(chunks)} blocchi per '{client_id_clean}' (Fonte: {source_file})."
 
 def get_memory_summary(client_id: str):
     client_id_clean = _clean_id(client_id)
     try:
-        # CORREZIONE: Cerchiamo dentro "metadata.client_id"
         records, _ = client.scroll(
             collection_name=collection_knowledge,
             limit=10000,
@@ -112,18 +115,20 @@ def get_memory_summary(client_id: str):
         
         summary = {}
         for record in records:
-            # I metadati sono dentro la chiave 'metadata'
             meta = record.payload.get("metadata", {})
             doc_type = meta.get("type", "generico")
-            summary[doc_type] = summary.get(doc_type, 0) + 1
+            source = meta.get("source", "sconosciuto")
             
-        if not summary:
-            debug_records, _ = client.scroll(collection_name=collection_knowledge, limit=5, with_payload=True, with_vectors=False)
-            debug_info = []
-            for r in debug_records:
-                debug_info.append(f"ID: {r.id} | Payload: {str(r.payload)}")
-            summary["_DEBUG_SONDA"] = "ULTIMI 5 RECORD NEL DB: \n" + "\n".join(debug_info)
-            summary["_DEBUG_ID_CERCATO"] = f"Stavo cercando metadata.client_id = '{client_id_clean}'"
+            if doc_type not in summary:
+                summary[doc_type] = {"count": 0, "files": set()}
+            
+            summary[doc_type]["count"] += 1
+            if source not in ["manuale", "sconosciuto", "sistema"]:
+                summary[doc_type]["files"].add(source)
+        
+        # Convertiamo i set in liste per renderli leggibili a Streamlit
+        for key in summary:
+            summary[key]["files"] = sorted(list(summary[key]["files"]))
             
         return summary
     except Exception as e:
@@ -132,7 +137,6 @@ def get_memory_summary(client_id: str):
 def delete_category(client_id: str, doc_type: str):
     client_id_clean = _clean_id(client_id)
     try:
-        # CORREZIONE: Filtri annidati corretti
         client.delete(
             collection_name=collection_knowledge,
             points_selector=Filter(
@@ -148,11 +152,7 @@ def delete_category(client_id: str, doc_type: str):
 
 def get_client_context(client_id: str, query: str, k: int = 8):
     client_id_clean = _clean_id(client_id)
-    # CORREZIONE: Filtro annidato corretto
-    docs = vectorstore.similarity_search(
-        query, k=k, 
-        filter=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))])
-    )
+    docs = vectorstore.similarity_search(query, k=k, filter=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))]))
     if not docs:
         return "Nessuna informazione trovata."
     return "\n\n---\n\n".join([f"[{doc.metadata.get('type', 'generico')}] {doc.page_content}" for doc in docs])
@@ -171,13 +171,12 @@ def web_search(query: str, num_results: int = 3):
 def save_and_teach(client_id: str, original_text: str, modified_text: str):
     prompt = PromptTemplate.from_template("Sei un Brand Strategist. AI ha scritto:\n'{original}'\nUmano ha corretto in:\n'{modified}'\nEstrai 1-2 regole stilistiche concrete. Rispondi SOLO con le regole.")
     rule = (prompt | llm).invoke({"original": original_text, "modified": modified_text}).content.strip()
-    add_document(client_id, rule, doc_type="regola_stile")
+    add_document(client_id, rule, doc_type="regola_stile", source_file="apprendimento_auto")
     return f"🧠 Regola appresa per '{client_id}':\n{rule}"
 
 def delete_client(client_id: str):
     client_id_clean = _clean_id(client_id)
     try:
-        # CORREZIONE: Filtro annidato corretto
         client.delete(collection_name=collection_knowledge, points_selector=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))]))
         client.delete(collection_name=collection_registry, points_selector=Filter(must=[FieldCondition(key="client_id", match=MatchValue(value=client_id_clean))]))
         return True, "Eliminato"
