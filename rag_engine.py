@@ -94,7 +94,6 @@ def add_document(client_id: str, text: str, doc_type: str = "generico", source_f
     client_id_clean = _clean_id(client_id)
     if not text or len(text.strip()) < 50:
         return "⚠️ Il testo è troppo breve o vuoto per essere salvato."
-    
     splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
     chunks = splitter.split_text(text)
     metadatas = [{"client_id": client_id_clean, "type": doc_type, "source": source_file} for _ in chunks]
@@ -105,33 +104,25 @@ def get_memory_summary(client_id: str):
     client_id_clean = _clean_id(client_id)
     try:
         records, _ = client.scroll(
-            collection_name=collection_knowledge,
-            limit=10000,
-            with_payload=True,
-            with_vectors=False,
+            collection_name=collection_knowledge, limit=10000, with_payload=True, with_vectors=False,
             scroll_filter=Filter(must=[FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean))])
         )
-        
         summary = {}
         for record in records:
             meta = record.payload.get("metadata", {})
             doc_type = meta.get("type", "generico")
             source = meta.get("source", "sconosciuto")
-            
             if doc_type not in summary:
                 summary[doc_type] = {"count": 0, "files": set()}
-            
             summary[doc_type]["count"] += 1
             if source not in ["manuale", "sconosciuto", "sistema"]:
                 summary[doc_type]["files"].add(source)
             elif source == "manuale":
-                summary[doc_type]["files"].add("📝 Testo Manuale Incollato")
+                summary[doc_type]["files"].add("📝 Testo Manuale")
             elif source == "sistema":
-                summary[doc_type]["files"].add("⚙️ Dati di Sistema")
-        
+                summary[doc_type]["files"].add("⚙️ Sistema")
         for key in summary:
             summary[key]["files"] = sorted(list(summary[key]["files"]))
-            
         return summary
     except Exception as e:
         return {"errore": str(e)}
@@ -139,35 +130,25 @@ def get_memory_summary(client_id: str):
 def delete_specific_file(client_id: str, doc_type: str, source_file: str):
     client_id_clean = _clean_id(client_id)
     try:
-        client.delete(
-            collection_name=collection_knowledge,
-            points_selector=Filter(
-                must=[
-                    FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean)),
-                    FieldCondition(key="metadata.type", match=MatchValue(value=doc_type)),
-                    FieldCondition(key="metadata.source", match=MatchValue(value=source_file))
-                ]
-            )
-        )
-        return True, f"✅ '{source_file}' eliminato con successo."
+        client.delete(collection_name=collection_knowledge, points_selector=Filter(must=[
+            FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean)),
+            FieldCondition(key="metadata.type", match=MatchValue(value=doc_type)),
+            FieldCondition(key="metadata.source", match=MatchValue(value=source_file))
+        ]))
+        return True, f"✅ '{source_file}' eliminato."
     except Exception as e:
-        return False, f"❌ Errore: {str(e)}"
+        return False, str(e)
 
 def delete_category(client_id: str, doc_type: str):
     client_id_clean = _clean_id(client_id)
     try:
-        client.delete(
-            collection_name=collection_knowledge,
-            points_selector=Filter(
-                must=[
-                    FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean)),
-                    FieldCondition(key="metadata.type", match=MatchValue(value=doc_type))
-                ]
-            )
-        )
-        return True, f"✅ Categoria '{doc_type}' eliminata con successo."
+        client.delete(collection_name=collection_knowledge, points_selector=Filter(must=[
+            FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id_clean)),
+            FieldCondition(key="metadata.type", match=MatchValue(value=doc_type))
+        ]))
+        return True, f"✅ Categoria '{doc_type}' eliminata."
     except Exception as e:
-        return False, f"❌ Errore: {str(e)}"
+        return False, str(e)
 
 def get_client_context(client_id: str, query: str, k: int = 8):
     client_id_clean = _clean_id(client_id)
