@@ -83,14 +83,17 @@ def register_client(client_id: str):
     except Exception:
         return False
 
-# FUNZIONE NUOVA: SCRAPES URL REALI E SALVA IN MEMORIA
 def scrape_and_save_url(client_id: str, url: str, doc_type: str = "link_riferimento"):
+    """Scrapa un URL con timeout per evitare blocchi dell'app."""
     client_id_clean = _clean_id(client_id)
     try:
-        downloaded = trafilatura.fetch_url(url)
-        text = trafilatura.extract(downloaded, output_format="txt") if downloaded else ""
+        # FIX BACKEND: Timeout di 10 secondi per evitare blocchi su siti lenti/bloccati
+        downloaded = trafilatura.fetch_url(url, timeout=10)
+        if not downloaded:
+            return False, f"⚠️ Sito non raggiungibile o protetto: {url}"
+        text = trafilatura.extract(downloaded, output_format="txt")
         if not text or len(text.strip()) < 100:
-            return False, f"⚠️ Link non leggibile o protetto: {url}"
+            return False, f"⚠️ Nessun testo estraibile (pagina vuota o solo immagini): {url}"
         
         splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
         chunks = splitter.split_text(text)
@@ -98,7 +101,7 @@ def scrape_and_save_url(client_id: str, url: str, doc_type: str = "link_riferime
         vectorstore.add_texts(texts=chunks, metadatas=metadatas)
         return True, f"✅ Scansionato e salvati {len(chunks)} blocchi da {url}"
     except Exception as e:
-        return False, f"❌ Errore scraping {url}: {str(e)}"
+        return False, f"❌ Errore scraping {url}: {str(e)[:100]}"
 
 def add_document(client_id: str, text: str, doc_type: str = "generico", source_file: str = "manuale"):
     client_id_clean = _clean_id(client_id)
@@ -142,7 +145,7 @@ def delete_category(client_id: str, doc_type: str):
     except Exception as e:
         return False, str(e)
 
-def get_client_context(client_id: str, query: str, k: int = 12):
+def get_client_context(client_id: str, query: str, k: int = 10):
     client_id_clean = _clean_id(client_id)
     try:
         qv = embeddings.embed_query(query)

@@ -27,7 +27,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# SIDEBAR
+# SIDEBAR (CON PULIZIA STATO AL CAMBIO CLIENTE)
 # ==========================================
 st.sidebar.title("🏢 Agenzia AI Hub")
 all_clients = rag.get_all_clients()
@@ -53,6 +53,11 @@ if selected_option == "➕ CREA NUOVO CLIENTE...":
                     st.rerun()
 else:
     client_id = selected_option
+    # FIX FRONTEND: Pulizia stato al cambio cliente per evitare dati incrociati
+    if 'ped_full_plan' in st.session_state:
+        del st.session_state['ped_full_plan']
+    if 'ped_batch' in st.session_state:
+        del st.session_state['ped_batch']
     st.sidebar.markdown("---")
     st.sidebar.success(f"🟢 Cliente attivo: **{client_id}**")
 
@@ -90,14 +95,14 @@ task_type = st.radio("🤖 Scegli l'Agente", [
 st.markdown("---")
 
 # ==========================================
-# AGENTE 1: MEMORIA (CON ISTRUZIONI DI FORMATO)
+# AGENTE 1: MEMORIA (CON RIEPILOGO UX)
 # ==========================================
 if task_type == "🧠 Carica e Gestisci Memoria":
     st.markdown('<div class="sub-header">Alimenta o modifica la memoria strategica del cliente</div>', unsafe_allow_html=True)
     
-    # --- SEZIONE A: ISTRUZIONI DI FORMATO (NUOVA E CRUCIALE) ---
-    with st.expander("📝 Istruzioni Specifiche per Formato (CLICCA PER MODIFICARE)", expanded=True):
-        st.info("💡 Definisci le regole di scrittura per ogni formato. L'AI le userà tassativamente durante la generazione. Modifica i testi preimpostati in base allo stile della tua agenzia.")
+    # --- ISTRUZIONI DI FORMATO ---
+    with st.expander("📝 Istruzioni Specifiche per Formato (CLICCA PER MODIFICARE)", expanded=False):
+        st.info("💡 Definisci le regole di scrittura per ogni formato. L'AI le userà tassativamente durante la generazione.")
         
         col_inst1, col_inst2 = st.columns(2)
         with col_inst1:
@@ -113,11 +118,10 @@ if task_type == "🧠 Carica e Gestisci Memoria":
             rag.add_document(client_id, instr_newsletter, "istruzioni_formato", "regole_newsletter")
             rag.add_document(client_id, instr_ig, "istruzioni_formato", "regole_instagram")
             st.success("✅ Istruzioni di formato salvate e pronte per l'uso!")
-            time.sleep(1)
 
     st.markdown("---")
     
-    # --- SEZIONE B: MEMORIA ATTUALE ---
+    # --- MEMORIA ATTUALE CON RIEPILOGO UX ---
     st.markdown("### 📂 Memoria Attuale")
     memory_summary = rag.get_memory_summary(client_id)
     reverse_mapping = {
@@ -132,7 +136,14 @@ if task_type == "🧠 Carica e Gestisci Memoria":
     if not has_data:
         st.info("La memoria di questo cliente è vuota.")
     else:
-        st.success("✅ Memoria caricata correttamente.")
+        # FIX UX: Riepilogo rapido per dare sicurezza all'utente
+        total_files = sum(len(data.get("files", [])) for data in memory_summary.values() if isinstance(data, dict))
+        active_categories = len([k for k in memory_summary.keys() if k != "errore" and k != "sistema"])
+        has_format_instructions = "istruzioni_formato" in memory_summary
+        status_format = "✅ ATTIVE" if has_format_instructions else "⚠️ NON CONFIGURATE"
+        
+        st.info(f"📊 **Riepilogo:** {active_categories} categorie attive · {total_files} fonti totali · Istruzioni Formato: **{status_format}**")
+        
         for doc_type, data in memory_summary.items():
             if doc_type == "errore": continue
             display_name = reverse_mapping.get(doc_type, f"📁 {doc_type}")
@@ -150,13 +161,13 @@ if task_type == "🧠 Carica e Gestisci Memoria":
     
     st.markdown("---")
     
-    # --- SEZIONE C: CARICAMENTO FILE E LINK ---
+    # --- CARICAMENTO FILE E LINK ---
     with st.expander("📎 Carica File, Testo o Link Web", expanded=False):
         col1, col2 = st.columns([2, 1])
         with col1:
             uploaded_files = st.file_uploader("📎 Carica file (PDF, DOCX, TXT, CSV)", type=["pdf", "docx", "txt", "csv"], accept_multiple_files=True)
             manual_text = st.text_area("Oppure incolla testo manuale:", height=150)
-            urls_text = st.text_area("🌐 Oppure incolla URL da scansionare (uno per riga)", height=100, placeholder="https://...")
+            urls_text = st.text_area("🌐 Oppure incolla URL da scansionare (uno per riga o separati da virgole)", height=100, placeholder="https://...")
         with col2:
             standard_categories = ["📘 Brand Book / Linee Guida", "👤 ICP / Personas & Pain/Gain", "🛡️ Gestione Obiezioni", "✍️ Esempi di Copy Approvati", "📝 Istruzioni Specifiche di Creazione", "📞 Note da Call / Briefing", "🚫 Regole Negative", "📊 Report / Dati Precedenti", "🔗 Link Asset, Competitor e Fonti", "➕ Scrivi una categoria personalizzata..."]
             selected_cat = st.selectbox("Scegli categoria", standard_categories, key="cat_select_file")
@@ -189,20 +200,22 @@ if task_type == "🧠 Carica e Gestisci Memoria":
                 ok, msg = rag.add_document(client_id, manual_text.strip(), doc_type_file, source_file="testo_manuale")
                 debug_info.append(msg)
             
-            # Scansione URL
+            # Scansione URL batch
             if urls_text.strip():
                 raw_urls = re.findall(r'https?://[^\s,;)]+|www\.[^\s,;)]+', urls_text)
                 urls_list = list(set([u.strip('.,)>"\'') for u in raw_urls]))
-                for url in urls_list:
-                    ok, msg = rag.scrape_and_save_url(client_id, url, doc_type="link_riferimento")
-                    debug_info.append(msg)
+                if urls_list:
+                    debug_info.append(f"🌐 Avvio scansione di {len(urls_list)} URL...")
+                    for url in urls_list:
+                        ok, msg = rag.scrape_and_save_url(client_id, url, doc_type="link_riferimento")
+                        debug_info.append(msg)
 
             if debug_info:
                 st.markdown(f'<div class="debug-box">' + "\n".join(debug_info) + "</div>", unsafe_allow_html=True)
                 time.sleep(1.5); st.rerun()
 
 # ==========================================
-# AGENTE 2: PED (CON INIEZIONE DINAMICA DELLE ISTRUZIONI DI FORMATO)
+# AGENTE 2: PED (CON JSON ROBUSTO)
 # ==========================================
 elif task_type == "📅 Piano Editoriale Completo":
     st.markdown('<div class="sub-header">Componi il tuo piano editoriale completo. Il sistema userà le istruzioni di formato specifiche per garantire qualità professionale.</div>', unsafe_allow_html=True)
@@ -244,10 +257,7 @@ elif task_type == "📅 Piano Editoriale Completo":
         
         if st.button(f"🚀 GENERA PIANO COMPLETO ({totale} contenuti)", type="primary", use_container_width=True):
             with st.spinner("Recupero contesto, istruzioni di formato e avvio generazione a batch..."):
-                # 1. Recupero contesto generale
                 context = rag.get_client_context(client_id, "brand book, ICP, personas, pain, gain, obiezioni, tono di voce, link riferimento")
-                
-                # 2. Recupero SPECIFICO delle istruzioni di formato
                 format_instructions = rag.get_client_context(client_id, "istruzioni di formato, regole di scrittura, come scrivere", k=10)
                 
                 request_list = []
@@ -264,14 +274,13 @@ elif task_type == "📅 Piano Editoriale Completo":
                 for i in range(0, len(request_list), batch_size):
                     batch = request_list[i:i+batch_size]
                     current_batch_num = (i // batch_size) + 1
-                    status_text.text(f"🔄 Generazione batch {current_batch_num}/{total_batches}...")
+                    status_text.text(f"🔄 Generazione batch {current_batch_num}/{total_batches} ({len(batch)} contenuti)...")
                     
                     batch_labels = []
                     for item in batch:
                         if item in canali_disponibili: batch_labels.append(canali_disponibili[item])
                         elif item in longform_disponibili: batch_labels.append(longform_disponibili[item])
                     
-                    # PROMPT AGGIORNATO CON INIEZIONE DINAMICA DELLE ISTRUZIONI DI FORMATO
                     prompt_pe = (
                         f"Sei un Senior Copywriter e Content Strategist. Genera ESATTAMENTE {len(batch)} contenuti in formato JSON STRICT.\n\n"
                         f"## CONTESTO CLIENTE (BASE ASSOLUTA):\n{context}\n\n"
@@ -288,14 +297,26 @@ elif task_type == "📅 Piano Editoriale Completo":
                     
                     try:
                         response = rag.llm.invoke(prompt_pe).content
-                        clean_json = response.replace("```json", "").replace("```", "").strip()
+                        
+                        # FIX FULL STACK: Pulizia JSON robusta per gestire output LLM imperfetti
+                        clean_json = response.strip()
+                        # Rimuove markdown code block iniziale e finale
+                        clean_json = re.sub(r'^```(?:json)?\s*', '', clean_json)
+                        clean_json = re.sub(r'\s*```$', '', clean_json)
+                        clean_json = clean_json.strip()
+                        
+                        # Rimuove virgole trailing prima di ] o } (errore comune dei LLM)
+                        clean_json = re.sub(r',\s*([\]}])', r'\1', clean_json)
+                        
                         data_list = json.loads(clean_json)
                         all_contents.extend(data_list)
                     except Exception as e:
-                        st.error(f"⚠️ Errore nel batch {current_batch_num}. Output grezzo:"); st.code(response)
+                        st.error(f"⚠️ Errore nel batch {current_batch_num}. Dettagli: {str(e)}")
+                        with st.expander("Vedi output grezzo (per debug)"):
+                            st.code(response)
                     
                     progress_bar.progress(min(1.0, (i + batch_size) / len(request_list)))
-                    time.sleep(1.5) # Pausa leggermente più lunga per garantire qualità
+                    time.sleep(1.5)
 
                 status_text.text("✅ Generazione completata!")
                 time.sleep(1)
@@ -336,7 +357,7 @@ elif task_type == "📅 Piano Editoriale Completo":
                 st.success(result)
 
 # ==========================================
-# AGENTE 3: REPORT ADS (Invariato)
+# AGENTE 3: REPORT ADS
 # ==========================================
 elif task_type == "📊 Report ADS Performance":
     st.markdown('<div class="sub-header">Genera report PDF professionale con analisi performance ADS</div>', unsafe_allow_html=True)
@@ -391,7 +412,7 @@ elif task_type == "📊 Report ADS Performance":
                     pdf.add_page()
                     pdf.set_font("Arial", "B", 24)
                     pdf.cell(0, 60, "", ln=True)
-                    pdf.cell(0, 20, f"Report Performance ADS", ln=True, align="C")
+                    pdf.cell(0, 20, "Report Performance ADS", ln=True, align="C")
                     pdf.set_font("Arial", "", 16)
                     pdf.cell(0, 15, f"Cliente: {client_id}", ln=True, align="C")
                     pdf.cell(0, 10, f"Periodo: {date_range}", ln=True, align="C")
@@ -438,7 +459,7 @@ elif task_type == "📊 Report ADS Performance":
                     st.error(f"❌ Errore: {str(e)}")
 
 # ==========================================
-# AGENTE 4: REPORT SOCIAL (Invariato)
+# AGENTE 4: REPORT SOCIAL
 # ==========================================
 elif task_type == "📱 Report Social Organico":
     st.markdown('<div class="sub-header">Genera report PDF con analisi performance organica social</div>', unsafe_allow_html=True)
@@ -495,7 +516,7 @@ elif task_type == "📱 Report Social Organico":
                     pdf.add_page()
                     pdf.set_font("Arial", "B", 24)
                     pdf.cell(0, 60, "", ln=True)
-                    pdf.cell(0, 20, f"Report Performance Social Organico", ln=True, align="C")
+                    pdf.cell(0, 20, "Report Performance Social Organico", ln=True, align="C")
                     pdf.set_font("Arial", "", 16)
                     pdf.cell(0, 15, f"Cliente: {client_id}", ln=True, align="C")
                     pdf.cell(0, 10, f"Periodo: {date_range_social}", ln=True, align="C")
@@ -541,7 +562,7 @@ elif task_type == "📱 Report Social Organico":
                     st.error(f"❌ Errore: {str(e)}")
 
 # ==========================================
-# AGENTE 5: COMPETITOR (Invariato)
+# AGENTE 5: COMPETITOR
 # ==========================================
 elif task_type == "🔍 Analisi Competitor / Trend":
     st.markdown('<div class="sub-header">Ricerca sul web trend o competitor</div>', unsafe_allow_html=True)
